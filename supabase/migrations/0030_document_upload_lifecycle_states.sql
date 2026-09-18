@@ -1,0 +1,36 @@
+-- Adds the two lifecycle states direct-to-Storage uploads need.
+--
+-- WHY A NEW STATE AT ALL
+--
+-- Uploads used to stream the whole file through a Server Action: the bytes and
+-- the `documents` row were written by the same request, so a row could not
+-- exist unless the file did. Direct-to-Storage splits that in two — the server
+-- mints a signed upload URL, the browser PUTs the bytes, and a second request
+-- confirms. Between those two requests there is a window in which a row exists
+-- and the object may not, may be truncated, or may be something entirely
+-- different from what was declared.
+--
+-- `pending` names that window explicitly instead of leaving it implied. It is
+-- the reason a failed upload cannot produce an apparently valid document: the
+-- row is only ever promoted to `uploaded` by a server that has itself read the
+-- stored object's size and leading bytes.
+--
+-- `rejected` records the outcome when that check fails. It is deliberately a
+-- terminal state rather than a delete, so that a rejection is auditable and so
+-- that a retrying client cannot walk a rejected row back to `pending`.
+--
+-- WHY THIS FILE ONLY ADDS THE VALUES
+--
+-- Postgres will not let a transaction use an enum value it added in that same
+-- transaction ("unsafe use of new value of enum type"). The Supabase CLI runs
+-- each migration file in its own transaction, so the column default that
+-- depends on `pending` has to live in the next file, 0031.
+--
+-- The existing values ('uploaded', 'processing', 'processed', 'failed',
+-- 'needs_review') are untouched. `processing`/`processed` remain unused —
+-- there is still no OCR provider — and the ordering leaves room for a future
+-- `pending -> scanning -> uploaded | rejected` path without another enum
+-- change to the confirm step's contract.
+
+alter type document_status add value if not exists 'pending';
+alter type document_status add value if not exists 'rejected';

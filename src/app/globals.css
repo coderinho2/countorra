@@ -1,0 +1,472 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens implement DESIGN.md verbatim (§3 Color Palette, §5 Spacing,
+ * §6 Radius Scale, §21 Elevation, §22 Motion, §25 Dark Mode).
+ * Do not hardcode hex values or pixel spacing in component files —
+ * reference these tokens (or the Tailwind utilities they back) instead.
+ *
+ * Spacing: Tailwind's default 4px-based scale (p-4 = 16px, gap-6 = 24px, ...)
+ * already matches DESIGN.md §5 exactly, so no custom spacing tokens are
+ * defined here — use Tailwind's numeric spacing utilities directly.
+ */
+
+:root {
+  /* Neutrals — paper/ink ramp (DESIGN.md §3) */
+  --color-paper: #fafaf8;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f3f2ee;
+  --color-border-subtle: #e7e5df;
+  --color-border: #d8d5cc;
+  --color-border-strong: #b9b4a8;
+  --color-text-tertiary: #8a8577;
+  --color-text-secondary: #5c594e;
+  --color-text-primary: #201f1b;
+  --color-ink: #14130f;
+
+  /* Accent — Statement Navy */
+  --color-accent: #1b3a5c;
+  --color-accent-hover: #14304c;
+  --color-accent-subtle: #e9eef3;
+  --color-accent-contrast: #ffffff;
+
+  /* Semantic — financial meaning, independent of accent hue */
+  --color-positive: #1a7f5a;
+  --color-positive-subtle: #e4f1eb;
+  --color-negative: #b3261e;
+  --color-negative-subtle: #fbeae9;
+  --color-warning: #a15c07;
+  --color-warning-subtle: #fbf0de;
+  --color-info: #1b3a5c;
+  --color-info-subtle: #e9eef3;
+
+  /* Data visualization — categorical palette (DESIGN.md §12), distinct from UI tokens */
+  --color-chart-1: #1b3a5c;
+  --color-chart-2: #1a7f5a;
+  --color-chart-3: #a15c07;
+  --color-chart-4: #8c4b3a;
+  --color-chart-5: #5c594e;
+  --color-chart-6: #6b4c63;
+
+  /* Radius scale (DESIGN.md §6) */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Elevation (DESIGN.md §21) — border-first; shadow only for floating layers */
+  --shadow-level-2: 0 4px 16px rgba(20, 19, 15, 0.08);
+  --shadow-level-3: 0 16px 40px rgba(20, 19, 15, 0.14);
+
+  /* Motion (DESIGN.md §22).
+     Three curves, three duration tiers, used everywhere. Nothing in the
+     product should invent its own timing — if a new interaction needs a
+     duration, it belongs in one of these tiers or the tier is wrong.
+
+     `--ease-out` and `--ease-emphasized` are DESIGN.md §22's specified
+     curves and are unchanged. `--ease-exit` is added for the asymmetry the
+     spec implies but doesn't name: an element leaving should clear the
+     screen faster than it arrived, because the user has already moved on. */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Tier 1 — immediate feedback. Hover, focus, press, icon state.
+     Fast enough to read as "instant", slow enough not to flicker. */
+  --duration-fast: 120ms;
+  /* Tier 2 — a thing appearing or changing in place. Dropdowns, tabs,
+     inline state, nav. */
+  --duration-panel: 180ms;
+  /* Tier 3 — a layer or a view. Modals, drawers, page content entrance. */
+  --duration-modal: 220ms;
+  --duration-view: 240ms;
+  /* Exits are deliberately shorter than their matching entrance. */
+  --duration-exit: 140ms;
+
+  /* Stagger step for coordinated content entrance. Short on purpose —
+     DESIGN.md §22 allows one subtle entrance per view, not a cascade the
+     user has to wait through. */
+  --stagger-step: 40ms;
+}
+
+/* Manual override via next-themes-style [data-theme] attribute, layered
+   over the automatic prefers-color-scheme response below. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-paper: #0a0a0a;
+    --color-surface: #131313;
+    --color-surface-sunken: #1c1c1c;
+    --color-border-subtle: rgba(255, 255, 255, 0.07);
+    --color-border: rgba(255, 255, 255, 0.13);
+    --color-border-strong: rgba(255, 255, 255, 0.24);
+    --color-text-tertiary: #87837b;
+    --color-text-secondary: #b6b2a9;
+    --color-text-primary: #edebe7;
+    --color-ink: #fafaf8;
+
+    --color-accent: #5a87b5;
+    --color-accent-hover: #729bc4;
+    --color-accent-subtle: rgba(90, 135, 181, 0.14);
+    --color-accent-contrast: #0c1720;
+
+    --color-positive: #4fb98a;
+    --color-positive-subtle: rgba(79, 185, 138, 0.14);
+    --color-negative: #e5847d;
+    --color-negative-subtle: rgba(229, 132, 125, 0.14);
+    --color-warning: #d99a45;
+    --color-warning-subtle: rgba(217, 154, 69, 0.14);
+    --color-info: #5a87b5;
+    --color-info-subtle: rgba(90, 135, 181, 0.14);
+
+    --shadow-level-2: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --shadow-level-3: 0 16px 40px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-paper: #0a0a0a;
+  --color-surface: #131313;
+  --color-surface-sunken: #1c1c1c;
+  --color-border-subtle: rgba(255, 255, 255, 0.07);
+  --color-border: rgba(255, 255, 255, 0.13);
+  --color-border-strong: rgba(255, 255, 255, 0.24);
+  --color-text-tertiary: #87837b;
+  --color-text-secondary: #b6b2a9;
+  --color-text-primary: #edebe7;
+  --color-ink: #fafaf8;
+
+  --color-accent: #5a87b5;
+  --color-accent-hover: #729bc4;
+  --color-accent-subtle: rgba(90, 135, 181, 0.14);
+  --color-accent-contrast: #0c1720;
+
+  --color-positive: #4fb98a;
+  --color-positive-subtle: rgba(79, 185, 138, 0.14);
+  --color-negative: #e5847d;
+  --color-negative-subtle: rgba(229, 132, 125, 0.14);
+  --color-warning: #d99a45;
+  --color-warning-subtle: rgba(217, 154, 69, 0.14);
+  --color-info: #5a87b5;
+  --color-info-subtle: rgba(90, 135, 181, 0.14);
+
+  --shadow-level-2: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-level-3: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+@theme inline {
+  --color-paper: var(--color-paper);
+  --color-surface: var(--color-surface);
+  --color-surface-sunken: var(--color-surface-sunken);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-primary: var(--color-text-primary);
+  --color-ink: var(--color-ink);
+
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-subtle: var(--color-accent-subtle);
+  --color-accent-contrast: var(--color-accent-contrast);
+
+  --color-positive: var(--color-positive);
+  --color-positive-subtle: var(--color-positive-subtle);
+  --color-negative: var(--color-negative);
+  --color-negative-subtle: var(--color-negative-subtle);
+  --color-warning: var(--color-warning);
+  --color-warning-subtle: var(--color-warning-subtle);
+  --color-info: var(--color-info);
+  --color-info-subtle: var(--color-info-subtle);
+
+  --color-chart-1: var(--color-chart-1);
+  --color-chart-2: var(--color-chart-2);
+  --color-chart-3: var(--color-chart-3);
+  --color-chart-4: var(--color-chart-4);
+  --color-chart-5: var(--color-chart-5);
+  --color-chart-6: var(--color-chart-6);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-pill: var(--radius-pill);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  /* Editorial display serif — marketing headlines only (DESIGN.md §4).
+     Overrides Tailwind's generic serif stack so `font-serif` resolves to the
+     loaded face rather than to whatever the OS supplies. Nothing in the
+     authenticated app uses this utility. */
+  --font-serif: var(--font-playfair), Georgia, "Times New Roman", serif;
+}
+
+/*
+ * Entrance keyframes required by the isolated 21st.dev reference component
+ * `src/components/ui/hero-1.tsx` (`animate-fade-in`, `animate-fade-up`).
+ *
+ * Added rather than reused because the project genuinely had no equivalent:
+ * the motion system above is built on `@starting-style` transitions
+ * (`.page-enter`, `.section-enter`), which cannot be driven by an
+ * `animate-*` utility the way a keyframe animation can. The two existing
+ * keyframes (`ai-thinking-pulse`, `skeleton-shimmer`) are loops, not
+ * entrances.
+ *
+ * Declared in a separate `@theme` block so nothing in the token block above
+ * changes. In Tailwind v4 an `--animate-*` custom property is what generates
+ * the matching `animate-*` utility, and these two are referenced by exactly
+ * one file — no existing component uses either name, so no existing screen is
+ * affected. `forwards` is required because the reference markup pairs them
+ * with `opacity-0`; without it the element would snap back to invisible when
+ * the animation ends.
+ *
+ * Reduced motion is already handled: the global
+ * `@media (prefers-reduced-motion: reduce)` rule at the end of this file
+ * collapses every animation-duration to 0.01ms, so both of these arrive
+ * instantly rather than travelling.
+ */
+@theme {
+  --animate-fade-in: fade-in 1s ease-out forwards;
+  --animate-fade-up: fade-up 1s ease-out forwards;
+
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fade-up {
+    0% {
+      opacity: 0;
+      transform: translateY(40px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border-subtle);
+  }
+
+  html {
+    color-scheme: light dark;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 22px;
+  }
+
+  /* Financial figures always render in Geist Mono with aligned digits
+     (DESIGN.md §4 Principles) */
+  .font-numeric {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Page-to-page entrance (DESIGN.md §22 "page content entrance": 240ms
+     ease-out, 8px rise + fade). @starting-style is the native CSS way to
+     animate an element's first paint after mounting — no JS mounted-state
+     dance, so it can't trip the "setState in an effect" pattern, and it
+     isn't gated behind requestAnimationFrame (which silently never fires
+     on a backgrounded tab). Re-keying the element by pathname (see
+     PageTransition / AppTransition) makes it re-mount, and
+     @starting-style re-applies on every fresh mount.
+
+     Used by both the marketing site and the authenticated app so a user
+     moving from the public pages into the product never notices a change
+     in how the interface behaves. */
+  .page-enter {
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+      opacity var(--duration-view) var(--ease-out),
+      transform var(--duration-view) var(--ease-out);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  /* Coordinated section entrance within a view.
+     A dashboard that fades in as one flat block reads as a screenshot; the
+     same content arriving in sequence reads as the page assembling itself.
+     The total cascade is capped at ~200ms — long enough to perceive order,
+     short enough that nothing is ever waited on. Set `--enter-index` per
+     child (see the utility below); anything past the 5th child shares the
+     last step rather than pushing the tail out further. */
+  .section-enter {
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+      opacity var(--duration-view) var(--ease-out),
+      transform var(--duration-view) var(--ease-out);
+    transition-delay: calc(var(--enter-index, 0) * var(--stagger-step));
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  .section-enter:nth-child(n + 6) {
+    --enter-index: 5;
+  }
+
+  /* AI "thinking" indicator (DESIGN.md §14): a single 4px accent dot with a
+     slow, restrained opacity pulse — explicitly not three bouncing dots and
+     not a spinner. 1.4s is the specified period; Tailwind's `animate-pulse`
+     is 2s and dips to 50% opacity, which reads as a generic loading ghost
+     rather than a considered indicator. Goes static under reduced motion
+     via the global rule at the end of this file. */
+  @keyframes ai-thinking-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .ai-thinking-dot {
+    animation: ai-thinking-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* Skeleton shimmer (DESIGN.md §17): a slow 1.6s pulse between
+     surface-sunken and border-subtle — explicitly not Tailwind's generic
+     `animate-pulse`, which fades opacity on whatever colour it finds and
+     reads as a grey ghost rather than a placeholder that belongs to this
+     palette. Falls back to a flat fill under reduced motion via the global
+     rule at the end of this file. */
+  @keyframes skeleton-shimmer {
+    0%,
+    100% {
+      background-color: var(--color-surface-sunken);
+    }
+    50% {
+      background-color: var(--color-border-subtle);
+    }
+  }
+
+  .skeleton {
+    background-color: var(--color-surface-sunken);
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* Overlay layers (dropdowns, selects, popovers, tooltips).
+     Origin-aware: Radix publishes the trigger-relative origin, so the panel
+     scales out of the control that opened it instead of out of its own
+     centre. Modals are deliberately excluded — they aren't anchored to a
+     trigger, so they stay centred (DESIGN.md §21, and the one documented
+     exception in the design-engineering guidance).
+
+     Never scales from 0: an element that appears from nothing reads as a
+     glitch. 0.96 is small enough to feel like it grew, large enough to
+     have been there. */
+  .overlay-enter {
+    transform-origin: var(--radix-popper-transform-origin, center);
+    transition:
+      opacity var(--duration-panel) var(--ease-out),
+      transform var(--duration-panel) var(--ease-out);
+  }
+
+  .overlay-enter[data-state="open"] {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .overlay-enter[data-state="closed"] {
+    opacity: 0;
+    transform: scale(0.96);
+    transition-duration: var(--duration-exit);
+    transition-timing-function: var(--ease-exit);
+  }
+
+  /* Print (DESIGN.md §13: the printed invoice and the on-screen invoice
+     must be visually identical).
+
+     The app frame is chrome, not content: the sidebar, top bar and any
+     action row are dropped, the scroll container is released so the document
+     can flow across pages, and the page paints on white with black ink
+     regardless of the theme the user happens to be in — a dark-mode invoice
+     printed as-is is a solid black sheet.
+
+     Only the tokens change; the type scale and spacing are untouched, which
+     is what keeps the two renderings identical. */
+  @media print {
+    :root,
+    :root[data-theme="dark"] {
+      --color-paper: #ffffff;
+      --color-surface: #ffffff;
+      --color-surface-sunken: #ffffff;
+      --color-border-subtle: #d8d5cc;
+      --color-border: #b9b4a8;
+      --color-text-tertiary: #6b675c;
+      --color-text-secondary: #3f3d36;
+      --color-text-primary: #14130f;
+      --color-ink: #000000;
+    }
+
+    aside,
+    header[class*="h-14"] {
+      display: none !important;
+    }
+
+    /* The authenticated shell is a fixed-height, single-screen frame on
+       screen; in print it has to become a normal flowing document or only
+       the first viewport is ever put on paper. */
+    body,
+    main,
+    body > div {
+      display: block !important;
+      height: auto !important;
+      overflow: visible !important;
+    }
+  }
+
+  /* DESIGN.md §22 / §24: every animation in the product collapses to
+     effectively instant under reduced motion. State still *changes* — a
+     dropdown still opens, a row still highlights — it just arrives without
+     travel. Delays are zeroed too, otherwise a staggered entrance would
+     still hold content back for no visible reason. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      transition-delay: 0ms !important;
+      animation-delay: 0ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    .skeleton {
+      animation: none;
+      background-color: var(--color-surface-sunken);
+    }
+
+    .ai-thinking-dot {
+      animation: none;
+      opacity: 1;
+    }
+  }
+}

@@ -1,0 +1,25 @@
+-- Security fix, found during Phase 2 review, not a feature addition.
+--
+-- `ai_actions_insert_member` (0011_rls_policies.sql) allowed *any* org
+-- member — including a `viewer`, who should have no write capability at
+-- all — to insert an `ai_actions` row directly, with an arbitrary
+-- `tool_name`/`input`/`operation_mode`. The row would still need a
+-- privileged member (owner/admin/accountant/manager) to confirm it
+-- (`ai_actions_update_privileged`), and the confirmed tool still executes
+-- through the confirming user's own RLS-scoped session — so this was
+-- never a tenant-isolation break or a privilege escalation beyond what a
+-- privileged same-org member could already do directly. But it did mean
+-- the "the AI proposed this" framing an `ai_actions` row implies could be
+-- forged by an unprivileged member, undermining the trust model the
+-- confirmation UI depends on (product spec §4: mutations must come from
+-- an actual AI-interpreted request, not be plantable by any member).
+--
+-- Fixed the same way `audit_logs`/`ai_insights`/`notifications` already
+-- are: no INSERT policy for `authenticated` at all. Writes now go through
+-- the admin client (src/server/db/repositories/ai-conversations.ts
+-- #createPendingAction), called only from src/server/ai/actions.ts after
+-- `requireOrgMembership` has already run — so a row can only ever be
+-- created by the server-side flow that just received a real tool call
+-- from the model, never inserted directly by a client.
+
+drop policy ai_actions_insert_member on ai_actions;
