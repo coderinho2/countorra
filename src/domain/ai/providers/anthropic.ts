@@ -1,6 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { serverEnv } from "@/lib/env";
+import { serverEnv } from "@/lib/server-env";
 import { malformedResponse, toProviderError } from "../provider-errors";
 import type { AIGenerateInput, AIGenerateResult, AIMessage, AIProvider, AIToolCall } from "../provider";
 

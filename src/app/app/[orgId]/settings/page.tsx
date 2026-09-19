@@ -19,6 +19,7 @@ import { OrganizationForm } from "@/components/settings/organization-form";
 import { CategoriesManager } from "@/components/settings/categories-manager";
 import { MembersManager } from "@/components/settings/members-manager";
 import { SettingsNav } from "@/components/settings/settings-nav";
+import { DeleteAccountDialog } from "@/components/settings/delete-account-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, PageShell } from "@/components/ui/page-header";
@@ -35,6 +36,7 @@ const SECTIONS = [
   { id: "members", label: "Members" },
   { id: "plan", label: "Plan & usage" },
   { id: "security", label: "Security" },
+  { id: "delete-account", label: "Delete account" },
 ];
 
 /**
@@ -46,9 +48,11 @@ const SECTIONS = [
  * the controls, because a settings page that only shows fields makes the user
  * guess what changing one will do.
  *
- * There is no "delete workspace" here. No such action exists in the codebase,
- * and a button that looks destructive but does nothing is worse than an
- * absent one.
+ * There is no separate "delete workspace" control. Workspaces are deleted
+ * through account deletion (the last section), which is the one server-side
+ * deletion path: it cancels Stripe billing and releases bank credentials
+ * before anything is removed. Since migration 0050 the browser cannot delete
+ * an organization any other way.
  */
 export default async function SettingsPage({ params }: { params: Promise<{ orgId: string }> }) {
   const { orgId } = await params;
@@ -217,6 +221,33 @@ export default async function SettingsPage({ params }: { params: Promise<{ orgId
               <Button asChild size="sm" variant="secondary">
                 <Link href="/forgot-password">Change password</Link>
               </Button>
+            </div>
+          </SettingsSection>
+
+          {/* Account-level, not workspace-level, so it is shown to every
+              member regardless of role. The action decides what the account
+              holder may delete, from their own memberships. */}
+          <SettingsSection
+            id="delete-account"
+            title="Delete account"
+            description="Permanently delete your account and every workspace only you use. This cannot be undone."
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex max-w-[60ch] flex-col gap-2 text-[13px] text-text-secondary">
+                <p>
+                  Workspaces where you are the only member are deleted with all of their records, documents, tax information and bank connections. You are
+                  removed from workspaces you share, and their records stay with the other members.
+                </p>
+                <p>
+                  If you are the only owner of a workspace that other people use, make another member an owner under Members first, so their data is not
+                  deleted with yours.
+                </p>
+                <p>
+                  A paid subscription on a workspace being deleted is canceled with Stripe before anything else happens. If the cancellation cannot be
+                  confirmed, nothing is deleted. You will need your password.
+                </p>
+              </div>
+              <DeleteAccountDialog />
             </div>
           </SettingsSection>
         </div>

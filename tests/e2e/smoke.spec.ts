@@ -69,6 +69,10 @@ test("unauthenticated visitors are redirected away from /app and every org-scope
     await page.goto(`/app/11111111-1111-4111-8111-111111111111/${path}`);
     await expect(page).toHaveURL(/\/login/);
   }
+  // The one fixed bank OAuth return page is behind the same session gate —
+  // arriving from a bank's redirect without a session lands on sign-in.
+  await page.goto("/app/bank-connections/oauth?oauth_state_id=forged");
+  await expect(page).toHaveURL(/\/login/);
 });
 
 test("the bank webhook endpoint is not an open door: a forged delivery is refused whether or not a provider is configured", async ({ request }) => {
@@ -126,11 +130,12 @@ test("onboarding: entity type radiogroup is keyboard-navigable and only one opti
 test("legal pages render real content, not dead links", async ({ page }) => {
   await page.goto("/privacy");
   await expect(page.getByRole("heading", { name: "Privacy Policy" })).toBeVisible();
-  await expect(page.getByText("Configuration notice.")).toBeVisible();
+  // While business facts are missing, the page says it is not final.
+  await expect(page.getByText("Not yet final.")).toBeVisible();
 
   await page.goto("/terms");
   await expect(page.getByRole("heading", { name: "Terms of Service" })).toBeVisible();
-  await expect(page.getByText(/not professional financial, tax, legal, or accounting advice/i)).toBeVisible();
+  await expect(page.getByText(/not professional financial, tax, legal,? or accounting advice/i)).toBeVisible();
 });
 
 test("pricing page shows all three plans with real, enforced AI usage limits", async ({ page }) => {

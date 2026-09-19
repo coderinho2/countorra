@@ -34,7 +34,7 @@ const state = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/lib/env", () => ({
+vi.mock("@/lib/server-env", () => ({
   serverEnv: () => ({
     BANK_SYNC_WORKER_SECRET: state.secret ?? undefined,
     CRON_SECRET: state.cronSecret ?? undefined,

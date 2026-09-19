@@ -52,7 +52,9 @@ vi.mock("@/domain/audit/audit-log", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/domain/audit/audit-log")>()),
   recordAuditEvent: async (_client: unknown, event: { action: string; metadata?: Record<string, unknown> }) => void state.audits.push(event),
 }));
-vi.mock("@/server/bank-connections/providers", () => ({ configuredBankProviders: () => state.providers, configuredSecretStore: () => null }));
+vi.mock("@/server/bank-connections/providers", () => ({ configuredBankProviders: () => state.providers, configuredSecretStore: () => null, bankLinkStateKeyset: () => null }));
+// The sealed OAuth session cookie (Task 16) is exercised in bank-oauth-return.test.ts.
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined, set: () => {} }) }));
 // The canonical entitlement source, read through the subscription repository —
 // no second entitlement model anywhere near bank connections.
 vi.mock("@/server/db/repositories/subscriptions", () => ({ getSubscription: async () => state.subscription }));

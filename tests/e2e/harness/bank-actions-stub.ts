@@ -28,6 +28,12 @@ function recorder(action: string) {
 export const startBankLinkAction = recorder("startBankLink");
 export const completeBankLinkAction = recorder("completeBankLink");
 export const completeBankReauthAction = recorder("completeBankReauth");
+export const completeBankOauthAction = recorder("completeBankOauth");
+export const resumeBankOauthAction = async (): Promise<BankActionResult> => {
+  window.__bankSubmissions = window.__bankSubmissions ?? [];
+  window.__bankSubmissions.push({ action: "resumeBankOauth", fields: {} });
+  return window.__bankNextResult ?? { error: "Recorded by the harness." };
+};
 export const requestBankSyncAction = recorder("requestBankSync");
 export const disconnectBankConnectionAction = recorder("disconnect");
 export const linkExternalAccountAction = recorder("link");

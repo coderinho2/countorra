@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { serverEnv } from "@/lib/env";
+import { serverEnv } from "@/lib/server-env";
 import { reportError, reportEvent } from "@/lib/observability";
 import { clientAddress, enforceRateLimit } from "@/server/security/rate-limit";
 import { configuredBankProviders } from "@/server/bank-connections/providers";

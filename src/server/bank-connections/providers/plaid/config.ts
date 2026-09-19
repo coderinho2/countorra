@@ -1,6 +1,7 @@
 import "server-only";
-import { serverEnv } from "@/lib/env";
+import { serverEnv } from "@/lib/server-env";
 import { parseCredentialKeyset, type CredentialKeyset } from "@/server/bank-connections/credential-crypto";
+import { BANK_OAUTH_RETURN_PATH, checkBankOauthReturnUri } from "@/domain/bank-connections/oauth";
 
 /**
  * Plaid configuration. SERVER ONLY.
@@ -62,6 +63,20 @@ export function plaidConfig(): PlaidConfig | null {
   if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET || !env.PLAID_ENV || !env.BANK_CREDENTIAL_ENCRYPTION_KEY) {
     cached = null;
     return cached;
+  }
+
+  // Plaid sends every OAuth bank's customer back to exactly this URI, so it
+  // must be the one fixed return path — never a per-organization one, which
+  // would work for a single workspace and strand every other customer at
+  // their bank. Refused here, at the first bank call, rather than discovered
+  // by a customer standing at their bank's redirect.
+  if (env.PLAID_REDIRECT_URI) {
+    const check = checkBankOauthReturnUri(env.PLAID_REDIRECT_URI);
+    if (!check.ok) {
+      throw new Error(
+        `PLAID_REDIRECT_URI is not the fixed bank OAuth return path (${check.problem}). It must be https://<your-origin>${BANK_OAUTH_RETURN_PATH} exactly — no organization id, no query string — and registered with Plaid character for character.`,
+      );
+    }
   }
 
   cached = {

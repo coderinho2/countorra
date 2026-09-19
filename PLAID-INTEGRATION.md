@@ -24,9 +24,9 @@ into the browser bundle.
 | `PLAID_ENV` | yes | `sandbox` or `production`. Never defaulted or guessed. |
 | `BANK_CREDENTIAL_ENCRYPTION_KEY` | yes | Encrypts stored access tokens. See §5. |
 | `PLAID_WEBHOOK_URL` | no | `https://<origin>/api/bank-connections/webhooks/plaid`. Omit locally; Plaid cannot reach localhost. |
-| `PLAID_REDIRECT_URI` | no | Required only for OAuth institutions, and **must not be set yet**: the return page is per-organization while the URI is one fixed value, so OAuth can serve only one organization. See [DEPLOYMENT.md §6, "Known blocker"](DEPLOYMENT.md#known-blocker-the-oauth-return-page-is-per-organization). |
+| `PLAID_REDIRECT_URI` | no | Required only for OAuth institutions: exactly `https://<origin>/app/bank-connections/oauth`, the same for every organization, registered in the Plaid dashboard character for character. Any other value is refused at startup. |
 
-**All or nothing.** `src/lib/env.ts` refuses a deployment that sets some of
+**All or nothing.** `src/lib/server-env.ts` refuses a deployment that sets some of
 `PLAID_CLIENT_ID` / `PLAID_SECRET` / `PLAID_ENV` but not all, and refuses Plaid
 without an encryption key. A deployment that can start a bank Link but cannot
 store the resulting token would fail on a customer who has already typed their
@@ -83,10 +83,14 @@ Nothing the browser sends is trusted beyond ids and the public token: accounts,
 balances, institution, status and transactions are all read from Plaid
 server-side.
 
-**OAuth institutions** return the customer to `PLAID_REDIRECT_URI`. That page
-(`/app/[orgId]/bank-connections/oauth`) re-opens Link with the same token and
-the received URL, then finishes through the same actions. It requires a
-session like every other page.
+**OAuth institutions** return the customer to `PLAID_REDIRECT_URI` — the one
+fixed page `/app/bank-connections/oauth`, shared by every organization. The
+page names no organization: the server resumes the Link session it sealed when
+Link started (an encrypted, HttpOnly cookie holding the user, organization,
+mode and Link token), re-checks the session user, membership, permission, plan
+and rate limit, and re-opens Link with the same token and the received URL.
+Completion sends only the public token. See DEPLOYMENT.md §6, "How the OAuth
+return works".
 
 ## 4. Re-authentication (update mode)
 

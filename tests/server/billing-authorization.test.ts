@@ -31,7 +31,11 @@ const state = vi.hoisted(() => {
     // Literal: `vi.hoisted` runs before the const declarations above.
     memberOf: ["11111111-1111-4111-8111-111111111111"],
     billingConfigured: true,
-    subscription: null as { planId: string; status: string; stripeCustomerId: string | null } | null,
+    subscription: null as { planId: string; status: string; stripeCustomerId: string | null; deletionLockedAt?: string | null } | null,
+    /** What the post-create re-read sees (Task 17): a deletion that started, or
+     *  finished, while the Checkout session was being created. */
+    afterCreate: "unchanged" as "unchanged" | "locked" | "deleted",
+    expiredSessions: [] as string[],
     rateLimited: false,
     /** Everything handed to Stripe, so the test can inspect it. */
     checkoutCalls: [] as Record<string, unknown>[],
@@ -83,7 +87,13 @@ vi.mock("@/server/supabase/admin", () => ({
       select: () => ({
         eq: () => ({
           maybeSingle: async () => ({
-            data: { stripe_customer_id: state.boundCustomers.at(-1)?.customerId ?? null },
+            data:
+              state.afterCreate === "deleted"
+                ? null
+                : {
+                    stripe_customer_id: state.boundCustomers.at(-1)?.customerId ?? null,
+                    deletion_locked_at: state.afterCreate === "locked" ? new Date().toISOString() : null,
+                  },
             error: null,
           }),
         }),
@@ -121,7 +131,11 @@ vi.mock("@/server/billing/stripe-client", () => ({
             sessions: {
               create: async (params: Record<string, unknown>) => {
                 state.checkoutCalls.push(params);
-                return { url: "https://checkout.stripe.test/session" };
+                return { id: "cs_test_created", url: "https://checkout.stripe.test/session" };
+              },
+              expire: async (id: string) => {
+                state.expiredSessions.push(id);
+                return { id, status: "expired" };
               },
             },
           },
@@ -168,6 +182,8 @@ beforeEach(() => {
   state.customersCreated = [];
   state.boundCustomers = [];
   state.auditActions = [];
+  state.afterCreate = "unchanged";
+  state.expiredSessions = [];
 });
 
 describe("checkout authorization", () => {
@@ -392,6 +408,55 @@ describe("customer portal authorization", () => {
     const result = await createBillingPortalSession({ organizationId: ORG });
 
     expect(result.error).toMatch(/doesn't have a billing account/i);
+    expect(state.portalCalls).toEqual([]);
+  });
+});
+
+/**
+ * A deletion in progress (Task 17). Deletion cancels every subscription and
+ * expires every open Checkout session it can see; these close the window in
+ * which a NEW one could be opened behind it.
+ */
+describe("billing is frozen while the workspace is being deleted", () => {
+  const recently = () => new Date(Date.now() - 60_000).toISOString();
+
+  it("refuses Checkout while a deletion holds the lock, before reaching Stripe", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_org_a", deletionLockedAt: recently() };
+    const result = await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(result.error).toMatch(/being deleted/i);
+    expect(result.url).toBeUndefined();
+    expect(state.checkoutCalls).toEqual([]);
+    expect(state.customersCreated).toEqual([]);
+  });
+
+  it("allows Checkout again once a stale lock has lapsed", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_org_a", deletionLockedAt: new Date(Date.now() - 20 * 60_000).toISOString() };
+    expect((await createCheckoutSession({ organizationId: ORG, plan: "premium" })).url).toBeTruthy();
+  });
+
+  it("expires the session it just created if a deletion started meanwhile", async () => {
+    state.afterCreate = "locked";
+    const result = await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(result.error).toMatch(/being deleted/i);
+    expect(result.url).toBeUndefined();
+    expect(state.expiredSessions).toEqual(["cs_test_created"]);
+  });
+
+  it("expires the session it just created if the workspace is already gone", async () => {
+    state.afterCreate = "deleted";
+    const result = await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(result.url).toBeUndefined();
+    expect(state.expiredSessions).toEqual(["cs_test_created"]);
+  });
+
+  it("refuses the Customer Portal while a deletion holds the lock", async () => {
+    state.subscription = { planId: "premium", status: "canceled", stripeCustomerId: "cus_org_a", deletionLockedAt: recently() };
+    const result = await createBillingPortalSession({ organizationId: ORG });
+
+    expect(result.error).toMatch(/being deleted/i);
     expect(state.portalCalls).toEqual([]);
   });
 });

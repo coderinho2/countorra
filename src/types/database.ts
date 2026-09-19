@@ -915,6 +915,10 @@ export type SubscriptionRow = {
   canceled_at: string | null;
   /** `created` of the newest Stripe event applied; older events are ignored. */
   stripe_event_at: string | null;
+  // ── Added by 0050_billing_safe_organization_deletion.sql ──
+  /** Held while a server-side deletion cancels this organization's billing. */
+  deletion_lock_id: string | null;
+  deletion_locked_at: string | null;
 }
 
 export type StripeWebhookEventRow = {
@@ -1990,6 +1994,8 @@ export type Database = {
           cancel_at_period_end?: boolean;
           canceled_at?: string | null;
           stripe_event_at?: string | null;
+          deletion_lock_id?: string | null;
+          deletion_locked_at?: string | null;
         };
         Update: {
           id?: string;
@@ -2007,6 +2013,8 @@ export type Database = {
           cancel_at_period_end?: boolean;
           canceled_at?: string | null;
           stripe_event_at?: string | null;
+          deletion_lock_id?: string | null;
+          deletion_locked_at?: string | null;
         };
         Relationships: [];
       };
@@ -2564,6 +2572,18 @@ export type Database = {
       bind_stripe_customer: {
         Args: { p_organization_id: string; p_stripe_customer_id: string };
         Returns: undefined;
+      };
+      acquire_organization_billing_teardown: {
+        Args: { p_organization_id: string; p_attempt_id: string };
+        Returns: boolean;
+      };
+      release_organization_billing_teardown: {
+        Args: { p_organization_id: string; p_attempt_id: string };
+        Returns: undefined;
+      };
+      record_stripe_subscription_terminal: {
+        Args: { p_organization_id: string; p_stripe_subscription_id: string; p_status: SubscriptionStatus; p_canceled_at: string };
+        Returns: boolean;
       };
       record_audit_event: {
         Args: {

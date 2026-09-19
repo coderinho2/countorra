@@ -1,7 +1,8 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/server/supabase/admin";
-import { publicEnv, serverEnv } from "@/lib/env";
+import { publicEnv } from "@/lib/env";
+import { serverEnv } from "@/lib/server-env";
 import { normalizeEmailAddress } from "@/domain/email/message";
 
 /**

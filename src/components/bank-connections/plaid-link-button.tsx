@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { completeBankLinkAction, completeBankReauthAction, startBankLinkAction, type BankActionResult } from "@/server/bank-connections/actions";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PLAID_END_USER_PRIVACY_POLICY_URL } from "@/domain/legal/facts";
+import {
+  completeBankLinkAction,
+  completeBankOauthAction,
+  completeBankReauthAction,
+  resumeBankOauthAction,
+  startBankLinkAction,
+  type BankActionResult,
+} from "@/server/bank-connections/actions";
 
 /**
  * THE PROVIDER'S OWN BROWSER COMPONENT.
@@ -16,11 +25,19 @@ import { completeBankLinkAction, completeBankReauthAction, startBankLinkAction, 
  *
  * The flow:
  *
- *   click ─▶ startBankLinkAction (authenticated, authorized, entitled, rate
- *            limited, server-side) ─▶ Link token
+ *   click ─▶ DISCLOSURE: what Plaid is, what it shares, what Countorra never
+ *            sees — and a real choice to continue or not. Nothing is
+ *            requested from the server, and Plaid's script is not loaded,
+ *            until the person chooses "Continue to Plaid".
+ *         ─▶ startBankLinkAction (authenticated, authorized, entitled, rate
+ *            limited, server-side) ─▶ Link token, and a sealed session cookie
  *         ─▶ Plaid's dialog, in the customer's browser
  *         ─▶ public token ─▶ completeBankLinkAction ─▶ server exchanges it,
  *            encrypts the access token, creates the connection
+ *
+ * A bank that signs the customer in on its own website sends them to the one
+ * fixed return page instead, where `PlaidOauthResume` picks up the SAME
+ * session from the server — see below.
  *
  * Nothing here decides anything: if the dialog is closed, no connection
  * exists; if the server refuses, the reason is shown as written; and
@@ -33,8 +50,7 @@ import { completeBankLinkAction, completeBankReauthAction, startBankLinkAction, 
  */
 
 const PLAID_SCRIPT_URL = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
-/** Only the short-lived Link token, and only to survive an OAuth redirect. */
-const RESUME_KEY = "countorra.bank.link-token";
+
 
 interface PlaidHandler {
   open: () => void;
@@ -104,10 +120,59 @@ export interface PlaidLinkButtonProps {
   size?: "sm" | "md";
 }
 
+/**
+ * What a person is told BEFORE Plaid opens, and why each sentence is here.
+ *
+ * Every statement is a fact about this codebase: Plaid is the provider
+ * (src/server/bank-connections/providers/plaid); the only product requested
+ * is `transactions`, which is what the list of shared data describes; the
+ * access key is encrypted with AES-256-GCM before it is stored
+ * (credential-crypto.ts); nothing is imported until the person chooses an
+ * account; disconnecting removes access and keeps imported history.
+ *
+ * No checkbox, nothing pre-selected: continuing IS the choice, and cancelling
+ * is equally prominent and changes nothing.
+ */
+export function BankConnectionDisclosure({ mode }: { mode: "connect" | "reauthenticate" }) {
+  return (
+    <div className="flex flex-col gap-3 text-[13px] leading-[1.6] text-text-secondary">
+      <p>
+        Countorra uses <strong className="font-medium text-text-primary">Plaid</strong> to connect to your bank.{" "}
+        {mode === "reauthenticate" ? "Plaid opens next so you can sign in to your bank again." : "Plaid opens next, and you choose your bank and sign in there."}
+      </p>
+      <ul className="flex list-disc flex-col gap-1.5 pl-5">
+        <li>
+          <strong className="font-medium text-text-primary">Countorra never sees or stores your bank username or password.</strong> You enter them with Plaid and your
+          bank, not with Countorra.
+        </li>
+        <li>
+          With your permission, Plaid shares your accounts&apos; names, types, last four digits and balances, and their transactions, with Countorra. Countorra stores
+          the access key Plaid provides for this connection encrypted.
+        </li>
+        <li>Nothing enters your books until you choose which Countorra account each bank account feeds.</li>
+        <li>You can disconnect at any time on this page. Transactions already imported stay in your books.</li>
+      </ul>
+      <p>
+        Read{" "}
+        <a href={PLAID_END_USER_PRIVACY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="text-accent underline-offset-2 hover:underline">
+          Plaid&apos;s End User Privacy Policy
+        </a>{" "}
+        and{" "}
+        <a href="/privacy#bank-connections" target="_blank" rel="noopener noreferrer" className="text-accent underline-offset-2 hover:underline">
+          how Countorra handles bank data
+        </a>
+        .
+      </p>
+    </div>
+  );
+}
+
 export function PlaidLinkButton({ organizationId, connectionId, label, variant = "primary", size = "md" }: PlaidLinkButtonProps) {
   const router = useRouter();
   const [state, setState] = useState<BankActionResult>({});
   const [busy, setBusy] = useState(false);
+  const [disclosureOpen, setDisclosureOpen] = useState(false);
+  const mode = connectionId ? "reauthenticate" : "connect";
 
   const finish = useCallback(
     async (publicToken: string | null) => {
@@ -142,13 +207,9 @@ export function PlaidLinkButton({ organizationId, connectionId, label, variant =
         return;
       }
 
-      // Kept only so an OAuth institution's redirect can resume this session.
-      try {
-        window.sessionStorage.setItem(RESUME_KEY, JSON.stringify({ token: started.linkToken, connectionId: connectionId ?? null }));
-      } catch {
-        // A browser with storage disabled simply cannot resume an OAuth flow.
-      }
-
+      // Nothing is stored in the browser. If the bank signs the customer in
+      // on its own site, the return page resumes this session from the
+      // HttpOnly cookie the server sealed when it created the token.
       const handler = plaid.create({
         token: started.linkToken,
         onSuccess: (publicToken: string) => {
@@ -169,25 +230,50 @@ export function PlaidLinkButton({ organizationId, connectionId, label, variant =
     }
   }, [connectionId, finish, organizationId]);
 
+  const proceed = useCallback(() => {
+    setDisclosureOpen(false);
+    void open();
+  }, [open]);
+
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <Button type="button" variant={variant} size={size} onClick={open} disabled={busy}>
+      <Button type="button" variant={variant} size={size} onClick={() => setDisclosureOpen(true)} disabled={busy}>
         {busy ? "Opening…" : label}
       </Button>
+      <Dialog open={disclosureOpen} onOpenChange={setDisclosureOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{mode === "reauthenticate" ? "Sign in to your bank again through Plaid" : "Connect a bank through Plaid"}</DialogTitle>
+            <DialogDescription className="sr-only">How Countorra connects to your bank, and what is shared, before Plaid opens.</DialogDescription>
+          </DialogHeader>
+          <BankConnectionDisclosure mode={mode} />
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setDisclosureOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={proceed}>
+              Continue to Plaid
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Result state={state} />
     </div>
   );
 }
 
 /**
- * The return leg of an OAuth institution's sign-in.
+ * The return leg of an OAuth institution's sign-in, on the ONE fixed return
+ * page every organization shares.
  *
- * Plaid sends the customer to the bank's own site and back to
- * PLAID_REDIRECT_URI. Link is then re-created with the SAME token it started
- * with and the URL it came back to, which is what lets the dialog carry on
- * where it left off. Nothing else is read from that URL.
+ * Nothing is read from browser storage and nothing from the URL except what
+ * Plaid itself needs back (`receivedRedirectUri`). The server opens the
+ * session it sealed when Link started, checks it belongs to whoever is signed
+ * in, and hands back the same Link token — held in memory for these few
+ * seconds only — and the organization it belongs to. Completing sends only
+ * the public token; the organization is the server's.
  */
-export function PlaidOauthResume({ organizationId }: { organizationId: string }) {
+export function PlaidOauthResume() {
   const router = useRouter();
   const [state, setState] = useState<BankActionResult>({ message: "Finishing the bank sign-in…" });
 
@@ -195,17 +281,13 @@ export function PlaidOauthResume({ organizationId }: { organizationId: string })
     let cancelled = false;
 
     const resume = async () => {
-      let stored: { token: string; connectionId: string | null } | null = null;
-      try {
-        const raw = window.sessionStorage.getItem(RESUME_KEY);
-        stored = raw ? (JSON.parse(raw) as { token: string; connectionId: string | null }) : null;
-      } catch {
-        stored = null;
-      }
-      if (!stored?.token) {
-        setState({ error: "There's no bank sign-in to finish here. Start again from Bank connections." });
+      const resumed = await resumeBankOauthAction();
+      if (cancelled) return;
+      if (!resumed.linkToken || !resumed.organizationId) {
+        setState({ error: resumed.error ?? "There's no bank sign-in to finish here. Start again from Bank connections." });
         return;
       }
+      const organizationId = resumed.organizationId;
 
       const plaid = await loadPlaid();
       if (!plaid || cancelled) {
@@ -214,20 +296,18 @@ export function PlaidOauthResume({ organizationId }: { organizationId: string })
       }
 
       const handler = plaid.create({
-        token: stored.token,
+        token: resumed.linkToken,
         receivedRedirectUri: window.location.href,
         onSuccess: async (publicToken: string) => {
           handler.destroy();
-          window.sessionStorage.removeItem(RESUME_KEY);
-          const result = stored.connectionId
-            ? await completeBankReauthAction({}, form({ organizationId, connectionId: stored.connectionId }))
-            : await completeBankLinkAction({}, form({ organizationId, publicToken }));
+          const data = new FormData();
+          if (resumed.mode !== "reauthenticate") data.set("publicToken", publicToken);
+          const result = await completeBankOauthAction({}, data);
           setState(result);
           if (result.success) router.replace(`/app/${organizationId}/bank-connections`);
         },
         onExit: () => {
           handler.destroy();
-          window.sessionStorage.removeItem(RESUME_KEY);
           setState({ message: "The bank sign-in didn't finish. Nothing was changed." });
         },
       });
@@ -238,7 +318,7 @@ export function PlaidOauthResume({ organizationId }: { organizationId: string })
     return () => {
       cancelled = true;
     };
-  }, [organizationId, router]);
+  }, [router]);
 
   return <Result state={state} />;
 }

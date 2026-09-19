@@ -109,8 +109,9 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 
 ## 3. Environment variables
 
-`src/lib/env.ts` is the only place `process.env` is read for secrets, and
-`.env.example` documents every variable. **Nothing here may be prefixed
+`src/lib/server-env.ts` (server-only) is where `process.env` is read for
+secrets — `src/lib/env.ts` holds only the public values browser code may
+import — and `.env.example` documents every variable. **Nothing here may be prefixed
 `NEXT_PUBLIC_` except the three that already are** — that prefix inlines the
 value into the browser bundle.
 
@@ -152,7 +153,7 @@ Production fails checkout, it does not charge anyone.
 | `PLAID_SECRET` | **production** secret | **sandbox** secret | sandbox | **yes** |
 | `PLAID_ENV` | `production` | `sandbox` | `sandbox` | no |
 | `PLAID_WEBHOOK_URL` | `https://<your-domain>/api/bank-connections/webhooks/plaid` | `https://<preview-alias>/api/bank-connections/webhooks/plaid` | tunnel URL or unset | no |
-| `PLAID_REDIRECT_URI` | **blocked — see §6 "Known blocker"** | unset | unset | no |
+| `PLAID_REDIRECT_URI` | `https://<your-domain>/app/bank-connections/oauth` | `https://<preview-alias>/app/bank-connections/oauth` | `http://localhost:3000/app/bank-connections/oauth` or unset | no |
 | `BANK_CREDENTIAL_ENCRYPTION_KEY` | its own key | its own key | its own key | **yes** — see §14 |
 | `BANK_SYNC_WORKER_SECRET` | ✓ | ✓ | ✓ | **yes** |
 | `CRON_SECRET` | **same value** as `BANK_SYNC_WORKER_SECRET` | not needed (no crons on preview) | unset | **yes** |
@@ -263,10 +264,15 @@ connections page shows a sandbox warning, and every connection made is labelled
    case, the URL of the live privacy policy). This is a review; allow days.
 2. Set the Production-only variables in Vercel (§3): production secret,
    `PLAID_ENV=production`, webhook URL, redirect URI.
-3. **OAuth redirect — see the known blocker below.** Most large US banks
-   (Chase, Bank of America, Wells Fargo, Capital One…) use OAuth, which
-   requires `PLAID_REDIRECT_URI` to be one exact URI registered in the Plaid
-   dashboard (Team settings → API → Allowed redirect URIs).
+3. **OAuth redirect.** Most large US banks (Chase, Bank of America, Wells
+   Fargo, Capital One…) sign the customer in on their own site and send them
+   back to one fixed address. Register exactly
+   `https://<your-domain>/app/bank-connections/oauth` in the Plaid dashboard
+   (Team settings → API → Allowed redirect URIs) and set `PLAID_REDIRECT_URI`
+   to the same string. It is the same for every organization — see
+   "How the OAuth return works" below. The app refuses to start bank
+   features with any other value (a per-organization path, a query string,
+   plain `http` on a real host).
 4. **Webhook**: `PLAID_WEBHOOK_URL` must be the public HTTPS URL of
    `/api/bank-connections/webhooks/plaid`. It is sent with each Link token; no
    dashboard setting is needed. Verification is ES256 JWT over the raw body;
@@ -276,29 +282,31 @@ connections page shows a sandbox warning, and every connection made is labelled
 
 A production Plaid secret must **never** be set in Preview or local.
 
-### Known blocker: the OAuth return page is per-organization
+### How the OAuth return works
 
-Found during Task 15 and **not yet fixed** (fixing it is a Plaid integration
-change, outside that task). The OAuth return page is
-`/app/[orgId]/bank-connections/oauth` and takes the organization from its URL,
-while `PLAID_REDIRECT_URI` is a single fixed value sent for every
-organization, and the resume record kept in `sessionStorage` holds only the
-Link token and connection id. So any one registered URI can serve at most one
-organization: everyone else returning from their bank's OAuth page would land
-on an organization they are not a member of.
+One fixed return path, `/app/bank-connections/oauth`, serves every
+organization (fixed in Task 16; before that the page lived under
+`/app/<orgId>/…`, which could serve only one workspace).
 
-Consequences until it is fixed:
+1. When Link starts, the server — having just checked the person's session,
+   membership, permission, plan and rate limit — **seals** who they are, which
+   organization, which connection (for a repair), the mode and the Link token
+   into an encrypted cookie (AES-256-GCM, key derived with HKDF from the bank
+   credential keyset). The cookie is HttpOnly, SameSite=Strict, scoped to
+   `/app`, and expires after 30 minutes. Nothing is written to browser
+   storage.
+2. The bank sends the customer back to the fixed path. The page is behind the
+   normal session gate and reads **no** organization from the URL.
+3. The page asks the server to resume. The server opens the seal and requires
+   that the signed-in person is the one who started it, that they are still a
+   member with permission, that the plan still includes bank connections, and
+   the rate limit — then re-opens the same Link session.
+4. Completion sends only the public token. The organization, connection and
+   mode are the sealed ones; anything else in the request is not read. The
+   seal is single-use.
 
-* **Do not set `PLAID_REDIRECT_URI`** in any environment. Without it, Link
-  works for non-OAuth institutions (and for every sandbox institution without
-  OAuth, such as First Platypus Bank), and OAuth-only banks do not complete.
-* Plaid Production is therefore usable for a **subset** of banks only.
-
-The fix is small and belongs in its own task: an organization-independent
-return route (for example `/app/bank-connections/oauth`) that reads the
-organization from the resume record written before Link opened, with
-membership still enforced server-side by the existing actions — plus a test
-that one registered URI serves two different organizations.
+A forged, altered, expired or someone-else's seal means "start again", and
+no data is touched.
 
 ---
 
@@ -374,19 +382,49 @@ job.
 
 ### Test mode (local and Preview)
 
-1. Dashboard in **Test mode**: create the product and two recurring monthly
-   prices, $19 (Premium) and $49 (Business) — these must match
-   `PLAN_ENTITLEMENTS` in `src/domain/billing/entitlements.ts`.
-2. Set the four variables (§3) with `sk_test_…` and the test price ids.
-3. Webhook: locally, `stripe listen --forward-to
-   localhost:3000/api/stripe/webhook` prints a `whsec_…` to use. On Preview,
-   add a test-mode endpoint at `https://<preview-alias>/api/stripe/webhook`.
-4. **Customer Portal**: Settings → Billing → Customer portal → configure and
-   **save** in test mode (allow plan switching between the two prices,
-   cancellation at period end, payment-method updates).
-5. Verify: checkout with `4242 4242 4242 4242` → webhook → the workspace
-   shows Premium; open **Manage billing**; switch plan; cancel; confirm the plan
-   reverts at period end.
+`scripts/stripe-test-setup.mjs` does the API-side setup and a read-only
+pre-flight. It accepts only a `sk_test_…` key, stops on a live key before any
+call, never prints a key or id, and only ever ADDS missing lines to
+`.env.local`.
+
+1. Stripe Dashboard, **Test mode** on: Developers → API keys → copy the
+   secret test key into `.env.local` as `STRIPE_SECRET_KEY=`.
+2. Dashboard (test mode) → Settings → Billing → **Customer portal** → click
+   **Save** once. That creates the test-mode *default* portal configuration,
+   which only the Dashboard can create; Countorra's portal sessions use the
+   default.
+3. `node scripts/stripe-test-setup.mjs setup` — finds or creates two products
+   with one recurring monthly USD price each, by lookup key
+   (`countorra_premium_monthly` $19, `countorra_business_monthly` $49 — these
+   must match `PLAN_ENTITLEMENTS`; no Free price), writes
+   `STRIPE_PREMIUM_PRICE_ID` / `STRIPE_BUSINESS_PRICE_ID` if absent, and sets
+   the default portal to what Countorra supports: invoice history,
+   payment-method update, billing email/address, cancel **at period end** with
+   no proration, and switching only between the two prices with
+   `always_invoice` (an upgrade is billed immediately — with
+   `create_prorations` an upgrade followed by cancel-at-period-end would never
+   be charged).
+4. Webhook signing secret, locally: install the Stripe CLI, `stripe login`,
+   then `stripe listen --print-secret` and put the `whsec_…` in `.env.local`
+   as `STRIPE_WEBHOOK_SECRET=`. Keep
+   `stripe listen --forward-to localhost:3000/api/stripe/webhook --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_succeeded,invoice.payment_failed`
+   running while testing — it signs with that same secret, so the existing
+   endpoint verifies real deliveries unchanged. On Preview, add a test-mode
+   endpoint at `https://<preview-alias>/api/stripe/webhook` with the same
+   seven events and use its signing secret instead.
+5. `node scripts/stripe-test-setup.mjs check` — every line must say YES.
+6. Automated suite: `npx vitest run tests/stripe-test-mode`. It talks to the
+   real Stripe API (prices match the canonical plans, Checkout with the
+   server's price, payment → signed webhook → plan, plan change, cancellation,
+   a declined card, the Customer Portal, and deletion cancelling a real
+   subscription) and deletes what it creates. With no Stripe variables at all
+   it is skipped (BLOCKED); with some but not all, or a non-`sk_test_` key, it
+   FAILS rather than skipping; with a live key it refuses to run.
+7. By hand, with the app and `stripe listen` running: checkout with
+   `4242 4242 4242 4242` → webhook → the workspace shows Premium; open
+   **Manage billing**; switch plan; cancel; confirm the plan reverts at period
+   end. The suite cannot complete a hosted Checkout page or receive a real
+   delivery on its own.
 
 ### Live mode (Production only)
 
@@ -410,6 +448,41 @@ job.
 Only the webhook can grant a paid plan; the checkout success page never does.
 The webhook answers 503 while Stripe is unconfigured, so Stripe retries rather
 than losing events.
+
+### Deleting a workspace that has a subscription
+
+A workspace is never deleted while Stripe may still be charging for it
+(`src/server/billing/deletion-safety.ts`, migration 0050):
+
+1. Account deletion takes a per-workspace teardown lock. A second deletion is
+   refused, and Checkout / Manage billing refuse while it is held (it lapses
+   after 15 minutes if an attempt crashes).
+2. The Stripe customer and subscription are read from the workspace's own
+   row — never from the request. Open Checkout sessions for that customer are
+   expired, then every subscription on the customer that is not `canceled` or
+   `incomplete_expired` is canceled **immediately**, with no proration credit
+   and no final invoice (refunds are a business decision — see
+   `LEGAL_FACTS.refundPolicy`).
+3. Stripe is asked again. Only when it reports nothing that can bill is the
+   cancellation recorded locally and deletion allowed to continue.
+4. If any of that cannot be established — Stripe unreachable, Stripe not
+   configured while the workspace has a customer, or a recorded subscription
+   id this Stripe account does not recognise (e.g. test-mode ids under live
+   keys) — **nothing is deleted**, the lock is released, and the person gets a
+   plain message with no provider detail.
+5. The database backs this up on its own: no browser session can delete an
+   organization, and nobody (service role included) can delete one whose row
+   still records a live Stripe subscription.
+
+Stripe customers are not deleted — Stripe keeps its invoice and payment
+records under its own obligations. Switching a deployment between test and
+live keys while workspaces still hold subscriptions from the other mode will
+block their deletion (step 4) until resolved by hand.
+
+Test-mode check before going live: subscribe a throwaway workspace with
+`4242 4242 4242 4242`, delete the account that owns it, and confirm in the
+Stripe dashboard that the subscription is **Canceled** and the customer has no
+open Checkout sessions.
 
 ---
 

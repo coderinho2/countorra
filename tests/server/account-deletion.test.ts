@@ -17,6 +17,8 @@ const state = vi.hoisted(() => {
   process.env.NEXT_PUBLIC_APP_URL ??= "http://localhost:3000";
   return {
     userId: "11111111-1111-4111-8111-111111111111",
+    /** False models a request with no session (Task 17.1). */
+    signedIn: true,
     reauthOk: true,
     memberships: [] as { organization_id: string; user_id: string; role: string }[],
     orgNames: {} as Record<string, string>,
@@ -32,6 +34,90 @@ const state = vi.hoisted(() => {
     conversationDeleteError: null as { message: string } | null,
     /** Bank credential release (Task 11). */
     bankRelease: { ok: true, released: 0 } as { ok: true; released: number } | { ok: false; reason: string },
+    /** Billing safety (Task 17): our rows, and what Stripe says. */
+    billing: {
+      stripeConfigured: true,
+      links: {} as Record<string, { stripeCustomerId: string | null; stripeSubscriptionId: string | null }>,
+      /** customer id → subscriptions Stripe reports for it. */
+      remote: {} as Record<string, { id: string; status: string; canceledAt: number | null }[]>,
+      openSessions: {} as Record<string, string[]>,
+      cancelError: null as (Error & { type?: string; code?: string }) | null,
+      /** Organizations whose teardown lock another attempt holds. */
+      busy: new Set<string>(),
+      locks: new Map<string, string>(),
+      /** Every Stripe call, in order, with the ids it was given. */
+      stripeCalls: [] as string[],
+      recorded: [] as { organizationId: string; subscriptionId: string; status: string }[],
+    },
+  };
+});
+
+/**
+ * The REAL billing-safety primitive, wired to a fake Stripe and a fake store.
+ * Only `billingTeardownDependencies` — the production wiring — is replaced, so
+ * the ordering and refusal logic under test is the shipped code.
+ */
+vi.mock("@/server/billing/deletion-safety", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/billing/deletion-safety")>();
+  const b = () => state.billing;
+  return {
+    ...actual,
+    billingTeardownDependencies: () => ({
+      store: {
+        acquire: async (organizationId: string, attemptId: string) => {
+          if (b().busy.has(organizationId)) return false;
+          b().locks.set(organizationId, attemptId);
+          state.operations.push(`billing-lock:${organizationId}`);
+          return true;
+        },
+        release: async (organizationId: string, attemptId: string) => {
+          if (b().locks.get(organizationId) === attemptId) b().locks.delete(organizationId);
+          state.operations.push(`billing-release:${organizationId}`);
+        },
+        read: async (organizationId: string) => b().links[organizationId] ?? { stripeCustomerId: null, stripeSubscriptionId: null },
+        recordTerminal: async (organizationId: string, subscriptionId: string, status: string) => {
+          b().recorded.push({ organizationId, subscriptionId, status });
+        },
+      },
+      gateway: b().stripeConfigured
+        ? {
+            listCustomerSubscriptions: async (customerId: string) => {
+              b().stripeCalls.push(`list:${customerId}`);
+              return (b().remote[customerId] ?? []).map((sub) => ({ ...sub }));
+            },
+            retrieveSubscription: async (id: string) => {
+              b().stripeCalls.push(`retrieve:${id}`);
+              for (const subs of Object.values(b().remote)) {
+                const found = subs.find((sub) => sub.id === id);
+                if (found) return { ...found };
+              }
+              return null;
+            },
+            cancelSubscription: async (id: string) => {
+              b().stripeCalls.push(`cancel:${id}`);
+              if (b().cancelError) throw b().cancelError;
+              for (const subs of Object.values(b().remote)) {
+                const found = subs.find((sub) => sub.id === id);
+                if (found) {
+                  found.status = "canceled";
+                  found.canceledAt = 1_790_000_000;
+                  state.operations.push(`stripe-cancel:${id}`);
+                  return { ...found };
+                }
+              }
+              throw Object.assign(new Error(`No such subscription: '${id}'`), { code: "resource_missing" });
+            },
+            listOpenCheckoutSessionIds: async (customerId: string) => {
+              b().stripeCalls.push(`sessions:${customerId}`);
+              return [...(b().openSessions[customerId] ?? [])];
+            },
+            expireCheckoutSession: async (id: string) => {
+              b().stripeCalls.push(`expire:${id}`);
+              for (const key of Object.keys(b().openSessions)) b().openSessions[key] = b().openSessions[key].filter((s) => s !== id);
+            },
+          }
+        : null,
+    }),
   };
 });
 
@@ -54,7 +140,15 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: as
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 vi.mock("@/server/auth/session", () => ({
-  requireUser: async () => ({ id: state.userId, email: "owner@example.test" }),
+  requireUser: async () => {
+    // The real requireUser redirects to /login; a redirect is a throw here.
+    if (!state.signedIn) {
+      const e = new Error("NEXT_REDIRECT:/login") as Error & { digest?: string };
+      e.digest = "NEXT_REDIRECT;/login";
+      throw e;
+    }
+    return { id: state.userId, email: "owner@example.test" };
+  },
   getSession: async () => ({ id: state.userId }),
   requireOrgMembership: async (organizationId: string) => ({
     user: { id: state.userId, email: "owner@example.test" },
@@ -178,6 +272,7 @@ async function runDeletion(form = deletionForm()) {
 }
 
 beforeEach(() => {
+  state.signedIn = true;
   state.reauthOk = true;
   state.role = "owner";
   state.memberships = [{ organization_id: SOLO, user_id: state.userId, role: "owner" }];
@@ -189,6 +284,15 @@ beforeEach(() => {
   state.deleteUserError = null;
   state.conversationDeleteError = null;
   state.bankRelease = { ok: true, released: 0 };
+  state.billing.stripeConfigured = true;
+  state.billing.links = {};
+  state.billing.remote = {};
+  state.billing.openSessions = {};
+  state.billing.cancelError = null;
+  state.billing.busy = new Set();
+  state.billing.locks = new Map();
+  state.billing.stripeCalls = [];
+  state.billing.recorded = [];
 });
 
 describe("bank-provider credentials (Task 11)", () => {
@@ -438,5 +542,202 @@ describe("the flow does not rewrite attribution itself", () => {
     await runDeletion();
 
     expect(state.operations.at(-1)).toBe("delete:auth.user");
+  });
+});
+
+/**
+ * Billing safety (Task 17).
+ *
+ * A workspace must never be deleted while Stripe may still be charging for
+ * it. These run the shipped primitive against a fake Stripe: the properties
+ * are the order of operations, what happens when Stripe fails, and that the
+ * Stripe ids come from our rows rather than from the request.
+ */
+describe("billing is settled before anything is deleted", () => {
+  const CUSTOMER = "cus_solo_workspace";
+  const SUB = "sub_solo_premium";
+
+  function paidWorkspace(status = "active") {
+    state.billing.links[SOLO] = { stripeCustomerId: CUSTOMER, stripeSubscriptionId: SUB };
+    state.billing.remote[CUSTOMER] = [{ id: SUB, status, canceledAt: null }];
+  }
+
+  const destructive = () =>
+    state.operations.filter((op) => op.startsWith("delete:") || op.startsWith("storage:") || op.startsWith("bank-credentials:"));
+
+  it("deletes a Free workspace without asking Stripe anything", async () => {
+    expect((await runDeletion()).error).toBeUndefined();
+    expect(state.billing.stripeCalls).toEqual([]);
+    expect(state.deletedUser).toBe(state.userId);
+  });
+
+  it("cancels an active subscription BEFORE bank credentials, files or rows", async () => {
+    paidWorkspace();
+    expect((await runDeletion()).error).toBeUndefined();
+
+    const canceledAt = state.operations.indexOf(`stripe-cancel:${SUB}`);
+    expect(canceledAt).toBeGreaterThanOrEqual(0);
+    expect(canceledAt).toBeLessThan(state.operations.indexOf(`bank-credentials:${SOLO}`));
+    expect(canceledAt).toBeLessThan(state.operations.indexOf(`storage:${SOLO}`));
+    expect(canceledAt).toBeLessThan(state.operations.indexOf(`delete:organizations:${SOLO}`));
+    expect(state.billing.remote[CUSTOMER][0].status).toBe("canceled");
+    expect(state.billing.recorded).toEqual([{ organizationId: SOLO, subscriptionId: SUB, status: "canceled" }]);
+  });
+
+  it.each(["trialing", "past_due", "unpaid", "incomplete", "paused"])("cancels a %s subscription too — it can still bill", async (status) => {
+    paidWorkspace(status);
+    expect((await runDeletion()).error).toBeUndefined();
+    expect(state.billing.stripeCalls).toContain(`cancel:${SUB}`);
+  });
+
+  it("verifies with Stripe after canceling, rather than trusting the cancel call", async () => {
+    paidWorkspace();
+    await runDeletion();
+    const calls = state.billing.stripeCalls;
+    expect(calls.lastIndexOf(`list:${CUSTOMER}`)).toBeGreaterThan(calls.indexOf(`cancel:${SUB}`));
+  });
+
+  it("does not cancel again when Stripe already reports the subscription canceled", async () => {
+    paidWorkspace("canceled");
+    expect((await runDeletion()).error).toBeUndefined();
+    expect(state.billing.stripeCalls.filter((c) => c.startsWith("cancel:"))).toEqual([]);
+    // Our row is brought in line with Stripe, so the database guard lets it go.
+    expect(state.billing.recorded).toEqual([{ organizationId: SOLO, subscriptionId: SUB, status: "canceled" }]);
+  });
+
+  it("expires an open Checkout page, so it cannot start a subscription afterwards", async () => {
+    paidWorkspace("canceled");
+    state.billing.openSessions[CUSTOMER] = ["cs_open_in_another_tab"];
+    expect((await runDeletion()).error).toBeUndefined();
+    expect(state.billing.stripeCalls).toContain("expire:cs_open_in_another_tab");
+  });
+
+  it("deletes NOTHING when Stripe cancellation fails, and says so safely", async () => {
+    paidWorkspace();
+    state.billing.cancelError = Object.assign(new Error(`Request req_abc: subscription '${SUB}' for customer '${CUSTOMER}' failed (sk_test_leak)`), {
+      type: "StripeAPIError",
+      code: "api_error",
+    });
+
+    const result = await runDeletion();
+
+    expect(result.error).toMatch(/nothing was deleted/i);
+    expect(result.error).not.toMatch(/sub_|cus_|sk_|req_|StripeAPIError|api_error/);
+    expect(destructive()).toEqual([]);
+    expect(state.deletedUser).toBeNull();
+    expect(state.signedOut).toBe(false);
+    // The workspace is left billable again only by its owner's choice: the
+    // lock is released, not left to block Checkout.
+    expect(state.billing.locks.size).toBe(0);
+  });
+
+  it("succeeds on a second attempt after a failure, canceling exactly once", async () => {
+    paidWorkspace();
+    state.billing.cancelError = Object.assign(new Error("timeout"), { type: "StripeConnectionError" });
+    expect((await runDeletion()).error).toMatch(/nothing was deleted/i);
+
+    state.billing.cancelError = null;
+    state.operations = [];
+    expect((await runDeletion()).error).toBeUndefined();
+    expect(state.operations.filter((op) => op === `stripe-cancel:${SUB}`)).toHaveLength(1);
+    expect(state.deletedUser).toBe(state.userId);
+  });
+
+  it("refuses when a Stripe customer exists but Stripe is not configured here", async () => {
+    paidWorkspace();
+    state.billing.stripeConfigured = false;
+
+    const result = await runDeletion();
+
+    expect(result.error).toMatch(/couldn't confirm that your subscription is canceled/i);
+    expect(destructive()).toEqual([]);
+    expect(state.deletedUser).toBeNull();
+  });
+
+  it("still deletes a workspace that never reached Checkout when Stripe is not configured", async () => {
+    state.billing.stripeConfigured = false;
+    expect((await runDeletion()).error).toBeUndefined();
+    expect(state.deletedUser).toBe(state.userId);
+  });
+
+  it("refuses when Stripe does not recognise the subscription we recorded", async () => {
+    // e.g. a test-mode id under live keys: it may be billing elsewhere.
+    state.billing.links[SOLO] = { stripeCustomerId: null, stripeSubscriptionId: "sub_from_another_account" };
+    const result = await runDeletion();
+    expect(result.error).toMatch(/nothing was deleted/i);
+    expect(destructive()).toEqual([]);
+  });
+
+  it("refuses a second deletion while one is already running", async () => {
+    paidWorkspace();
+    state.billing.busy.add(SOLO);
+
+    const result = await runDeletion();
+
+    expect(result.error).toMatch(/already in progress/i);
+    expect(state.billing.stripeCalls).toEqual([]);
+    expect(destructive()).toEqual([]);
+  });
+
+  it("releases the lock and reports the cancellation when a LATER step fails", async () => {
+    paidWorkspace();
+    state.bankRelease = { ok: false, reason: "SECRET_STORE_UNAVAILABLE" };
+
+    const result = await runDeletion();
+
+    expect(result.error).toMatch(/subscription has been canceled/i);
+    expect(state.operations.filter((op) => op.startsWith("delete:"))).toEqual([]);
+    expect(state.operations).toContain(`billing-release:${SOLO}`);
+    expect(state.billing.locks.size).toBe(0);
+  });
+
+  it("ignores Stripe or organization ids supplied in the form", async () => {
+    paidWorkspace();
+    state.billing.remote.cus_someone_else = [{ id: "sub_someone_else", status: "active", canceledAt: null }];
+
+    await runDeletion(
+      deletionForm({ organizationId: SHARED, customerId: "cus_someone_else", subscriptionId: "sub_someone_else", stripeCustomerId: "cus_someone_else" }),
+    );
+
+    expect(state.billing.stripeCalls.some((c) => c.includes("someone_else"))).toBe(false);
+    expect(state.billing.remote.cus_someone_else[0].status).toBe("active");
+    expect(state.operations).not.toContain(`delete:organizations:${SHARED}`);
+  });
+
+  it("never cancels billing for a shared workspace the account holder only leaves", async () => {
+    state.memberships = [
+      { organization_id: SHARED, user_id: state.userId, role: "owner" },
+      { organization_id: SHARED, user_id: OTHER_USER, role: "owner" },
+    ];
+    state.billing.links[SHARED] = { stripeCustomerId: "cus_shared", stripeSubscriptionId: "sub_shared" };
+    state.billing.remote.cus_shared = [{ id: "sub_shared", status: "active", canceledAt: null }];
+
+    expect((await runDeletion()).error).toBeUndefined();
+    expect(state.billing.stripeCalls).toEqual([]);
+    expect(state.billing.remote.cus_shared[0].status).toBe("active");
+  });
+
+  it("never reaches Stripe when the password is wrong", async () => {
+    paidWorkspace();
+    state.reauthOk = false;
+    await runDeletion();
+    expect(state.billing.stripeCalls).toEqual([]);
+    expect(state.billing.remote[CUSTOMER][0].status).toBe("active");
+  });
+});
+
+describe("the action requires a session (Task 17.1)", () => {
+  it("sends a caller with no session to sign in, touching nothing and reaching no provider", async () => {
+    state.signedIn = false;
+    state.billing.links[SOLO] = { stripeCustomerId: "cus_solo_workspace", stripeSubscriptionId: "sub_solo_premium" };
+    state.billing.remote.cus_solo_workspace = [{ id: "sub_solo_premium", status: "active", canceledAt: null }];
+
+    // Called directly, the way an attacker would: not through the UI.
+    await expect(deleteAccountAction({}, deletionForm())).rejects.toThrow(/NEXT_REDIRECT:\/login/);
+
+    expect(state.operations).toEqual([]);
+    expect(state.billing.stripeCalls).toEqual([]);
+    expect(state.deletedUser).toBeNull();
+    expect(state.signedOut).toBe(false);
   });
 });

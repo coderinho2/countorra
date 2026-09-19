@@ -14,6 +14,7 @@ import { isPurchasablePlan, planRelation } from "@/domain/billing/stripe-subscri
 import { entitlementsFor } from "@/domain/billing/entitlements";
 import { priceIdForPlan, stripeConfig } from "./stripe-config";
 import { stripeClient } from "./stripe-client";
+import { isBillingTeardownLocked } from "./deletion-safety";
 
 /**
  * Checkout and the Customer Portal.
@@ -53,6 +54,10 @@ const NOT_CONFIGURED: BillingActionResult = {
 
 const GENERIC_FAILURE = "We couldn't start that. Please try again in a moment.";
 
+/** A deletion is canceling this workspace's billing (see deletion-safety.ts).
+ *  Opening a new subscription now would race it. */
+const DELETION_IN_PROGRESS = "This workspace is being deleted, so its plan can't be changed.";
+
 /**
  * Creates a Stripe Checkout Session for a plan the SERVER selected.
  *
@@ -86,6 +91,7 @@ export async function createCheckoutSession(input: { organizationId: string; pla
   if (!organization) return { error: "Workspace not found." };
 
   const subscription = await getSubscription(client, input.organizationId);
+  if (isBillingTeardownLocked(subscription?.deletionLockedAt ?? null)) return { error: DELETION_IN_PROGRESS };
   const currentPlan = entitlementsFor(subscription).tier;
 
   // Already on this plan: sending them to Checkout would create a SECOND
@@ -122,6 +128,20 @@ export async function createCheckoutSession(input: { organizationId: string; pla
     });
 
     if (!session.url) throw new Error("Stripe returned a session with no URL");
+
+    // A deletion may have started — or finished — between the check above
+    // and this session existing. Deletion expires the open sessions it can
+    // see; this closes the one it could not have seen yet. Read with the
+    // service role, because a deleted workspace is invisible to the caller.
+    const { data: after } = await createAdminClient()
+      .from("subscriptions")
+      .select("deletion_locked_at")
+      .eq("organization_id", input.organizationId)
+      .maybeSingle();
+    if (!after || isBillingTeardownLocked(after.deletion_locked_at)) {
+      await stripe.checkout.sessions.expire(session.id);
+      return { error: DELETION_IN_PROGRESS };
+    }
 
     await recordAuditEvent(client, {
       organizationId: input.organizationId,
@@ -165,6 +185,7 @@ export async function createBillingPortalSession(input: { organizationId: string
   if (!subscription?.stripeCustomerId) {
     return { error: "This workspace doesn't have a billing account yet. Choose a plan first." };
   }
+  if (isBillingTeardownLocked(subscription.deletionLockedAt)) return { error: DELETION_IN_PROGRESS };
 
   try {
     const session = await stripe.billingPortal.sessions.create({

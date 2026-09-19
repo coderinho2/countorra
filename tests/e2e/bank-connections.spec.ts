@@ -119,13 +119,97 @@ test("configured, entitled and pointed at a sandbox: connect is offered, and the
   // One in the header, one in the empty state.
   await expect(page.getByRole("button", { name: "Connect a bank" })).toHaveCount(2);
 
-  // Clicking posts nothing but the organization — no provider, no institution,
-  // no account — and an answer without a token is reported honestly.
+  // Clicking opens the disclosure and posts nothing. Continuing posts nothing
+  // but the organization — no provider, no institution, no account — and an
+  // answer without a token is reported honestly.
   await page.evaluate(() => void (window.__bankNextResult = { error: "Plaid is not reachable from the harness." }));
   await page.getByRole("button", { name: "Connect a bank" }).first().click();
+  expect(await submissions(page)).toEqual([]);
+  await page.getByRole("button", { name: "Continue to Plaid" }).click();
   await expect.poll(() => submissions(page)).toHaveLength(1);
   expect((await submissions(page))[0]).toEqual({ action: "startBankLink", fields: { organizationId: ORG } });
   await expect(page.getByText("Plaid is not reachable from the harness.")).toBeVisible();
+});
+
+test("before Plaid opens, the person is told what happens — and nothing is requested until they choose to continue", async ({ page }) => {
+  const plaidRequests: string[] = [];
+  await page.route("https://cdn.plaid.com/**", (route) => {
+    plaidRequests.push(route.request().url());
+    return route.abort();
+  });
+  await open(page, "state=ready&role=owner");
+
+  await page.getByRole("button", { name: "Connect a bank" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Connect a bank through Plaid" });
+  await expect(dialog).toBeVisible();
+
+  // What is said, before anything happens.
+  await expect(dialog.getByText(/Countorra uses Plaid to connect to your bank/)).toBeVisible();
+  await expect(dialog.getByText("Countorra never sees or stores your bank username or password.")).toBeVisible();
+  await expect(dialog.getByText(/names, types, last four digits and balances, and their transactions/)).toBeVisible();
+  await expect(dialog.getByText(/stores the access key Plaid provides for this connection encrypted/)).toBeVisible();
+  await expect(dialog.getByText(/You can disconnect at any time/)).toBeVisible();
+  const plaidPolicy = dialog.getByRole("link", { name: "Plaid's End User Privacy Policy" });
+  await expect(plaidPolicy).toHaveAttribute("href", "https://plaid.com/legal/#end-user-privacy-policy");
+  await expect(plaidPolicy).toHaveAttribute("target", "_blank");
+  await expect(plaidPolicy).toHaveAttribute("rel", /noopener/);
+  await expect(dialog.getByRole("link", { name: "how Countorra handles bank data" })).toHaveAttribute("href", "/privacy#bank-connections");
+
+  // No checkbox and nothing pre-selected: continuing IS the choice, and
+  // cancelling is offered just as plainly.
+  await expect(dialog.getByRole("checkbox")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
+
+  // Nothing has been asked of the server, and Plaid's script has not loaded.
+  expect(await submissions(page)).toEqual([]);
+  expect(plaidRequests).toEqual([]);
+
+  // Cancelling changes nothing at all.
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await submissions(page)).toEqual([]);
+  expect(plaidRequests).toEqual([]);
+
+  // Continuing is what starts the link — and only then is Plaid's script
+  // requested. The Link token is kept in memory: nothing goes into storage.
+  await page.evaluate(() => void (window.__bankNextResult = { success: true, linkToken: "link-sandbox-harness-token", mode: "connect" }));
+  await page.getByRole("button", { name: "Connect a bank" }).first().click();
+  await page.getByRole("button", { name: "Continue to Plaid" }).click();
+  await expect.poll(() => submissions(page)).toHaveLength(1);
+  await expect.poll(() => plaidRequests.length).toBe(1);
+  const stored = await page.evaluate(() => JSON.stringify({ local: { ...window.localStorage }, session: { ...window.sessionStorage } }));
+  expect(stored).not.toContain("link-sandbox-harness-token");
+  expect(await page.evaluate(() => document.cookie)).not.toContain("link-sandbox");
+});
+
+test("re-authentication gets the same disclosure before Plaid opens", async ({ page }) => {
+  await open(page, "state=history&role=owner");
+  const live = page.getByRole("region", { name: /Synthetic Credit Union/ });
+
+  await live.getByRole("button", { name: "Sign in again" }).click();
+  const dialog = page.getByRole("dialog", { name: "Sign in to your bank again through Plaid" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("Countorra never sees or stores your bank username or password.")).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "Plaid's End User Privacy Policy" })).toBeVisible();
+  expect(await submissions(page)).toEqual([]);
+
+  await page.evaluate(() => void (window.__bankNextResult = { error: "Plaid is not reachable from the harness." }));
+  await dialog.getByRole("button", { name: "Continue to Plaid" }).click();
+  await expect.poll(() => submissions(page)).toHaveLength(1);
+  expect((await submissions(page))[0]).toEqual({ action: "startBankLink", fields: { organizationId: ORG, connectionId: "c1111111-1111-4111-8111-111111111111" } });
+});
+
+test("the disclosure fits a phone without sideways scrolling", async ({ page }) => {
+  test.skip(css.length === 0, "The production stylesheet was not found; layout cannot be judged without it.");
+  await page.setViewportSize({ width: 375, height: 812 });
+  await open(page, "state=ready&role=owner");
+  await page.getByRole("button", { name: "Connect a bank" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Connect a bank through Plaid" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Continue to Plaid" })).toBeInViewport();
+  const box = await dialog.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(375 + 1);
 });
 
 test("a viewer on a ready workspace still gets no controls", async ({ page }) => {

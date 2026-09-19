@@ -159,10 +159,20 @@ defense-in-depth, not the only layer.
 
 ## Environment variables
 
-See `.env.example`. `src/lib/env.ts` is the only file that reads
-`process.env` directly and is the only import path for secrets — everything
-else imports `publicEnv` or `serverEnv()` from there, validated with Zod at
-first use.
+See `.env.example`. Two modules read `process.env`, split by who may see
+the result (Task 18):
+
+- `src/lib/env.ts` — `publicEnv` (the `NEXT_PUBLIC_*` values) and the
+  deploy-time app-URL check. Browser code imports this, so it names no server
+  variable at all.
+- `src/lib/server-env.ts` — `serverEnv()`, every secret, validated with Zod at
+  first use. It begins with `import "server-only"`, so a Client Component that
+  reaches it fails the build.
+
+Stripe's configuration is read in `src/server/billing/stripe-config.ts`, also
+server-only. `tests/security/server-env-boundary.test.ts` and
+`tests/e2e/browser-bundle-env.spec.ts` check the boundary in source and in the
+built client output.
 
 ## Running locally
 

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/server/supabase/server";
-import { requireOrgMembership } from "@/server/auth/session";
+import { requireOrgMembership, requireUser } from "@/server/auth/session";
 import { can } from "@/domain/organizations/permissions";
 import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { enforceRateLimit } from "@/server/security/rate-limit";
@@ -12,7 +12,8 @@ import { getSubscription } from "@/server/db/repositories/subscriptions";
 import { entitlementsFor } from "@/domain/billing/entitlements";
 import { BANK_PROVIDER_NOT_CONFIGURED_MESSAGE } from "@/domain/bank-connections/provider";
 import { CONNECTION_STATUS_PRESENTATION, SYNC_FAILURE_TEXT } from "@/domain/bank-connections/presentation";
-import { configuredBankProviders } from "./providers";
+import { bankLinkStateKeyset, configuredBankProviders } from "./providers";
+import { clearBankLinkStateCookie, openBankLinkState, readBankLinkStateCookie, sealBankLinkState, writeBankLinkStateCookie } from "./link-state";
 import { productionBankDependencies } from "./runtime";
 import { completeBankLink, completeBankReauth, createBankLinkSession, disconnectBankConnection, linkExternalAccount, requestBankSync, resolveBankReview, type LinkAccountResult, type ResolveReviewResult } from "./service";
 
@@ -40,6 +41,10 @@ export interface BankActionResult {
   linkToken?: string;
   /** Whether that token opens a new connection or repairs an existing one. */
   mode?: "connect" | "reauthenticate";
+  /** Only ever the SERVER's answer, after a bank OAuth return, about which
+   *  organization the resumed session belongs to — so the page can go back
+   *  there. Never read from the browser. */
+  organizationId?: string;
 }
 
 const GENERIC_FAILURE = "That couldn't be completed, and nothing was changed. Please try again.";
@@ -114,7 +119,16 @@ export async function startBankLinkAction(_prev: BankActionResult, formData: For
         return { error: "This connection's stored access can't be read, so it can't be repaired. Disconnect it and connect the bank again." };
       case "provider_failed":
         return { error: SYNC_FAILURE_TEXT[outcome.category] };
-      case "created":
+      case "created": {
+        // Sealed now, while every fact in it has just been verified: this is
+        // what an OAuth bank's redirect comes back to, instead of a URL that
+        // names an organization.
+        const keyset = bankLinkStateKeyset();
+        if (keyset) {
+          await writeBankLinkStateCookie(
+            sealBankLinkState({ userId: user.id, organizationId, connectionId: connectionId ?? null, mode: outcome.mode, linkToken: outcome.linkToken }, keyset, new Date()),
+          );
+        }
         await recordAuditEvent(client, {
           organizationId,
           action: AUDIT_ACTIONS.bankLinkStarted,
@@ -123,6 +137,7 @@ export async function startBankLinkAction(_prev: BankActionResult, formData: For
           metadata: { mode: outcome.mode },
         });
         return { success: true, linkToken: outcome.linkToken, mode: outcome.mode };
+      }
     }
   } catch (error) {
     reportError(error, { scope: "bank", organizationId, userId: user.id, detail: { step: "start_link", mode: connectionId ? "reauthenticate" : "connect" } });
@@ -150,11 +165,26 @@ export async function completeBankLinkAction(_prev: BankActionResult, formData: 
   const client = await createClient();
   const access = await bankAccess(client, organizationId);
   if (!access.ok) return { error: access.error };
+
+  const result = await finishLink(client, organizationId, user.id, parsed.data.publicToken);
+  // Finished in the page, without a bank redirect: the sealed session has
+  // nothing left to resume, so it goes.
+  if (result.success) await clearBankLinkStateCookie();
+  return result;
+}
+
+/**
+ * Exchanges a public token for a connection in an organization that has
+ * ALREADY been authorized by the caller — membership, permission, rate limit
+ * and entitlement. Shared by the in-page completion and the OAuth return, so
+ * both paths reach the provider through exactly the same code.
+ */
+async function finishLink(client: Awaited<ReturnType<typeof createClient>>, organizationId: string, userId: string, publicToken: string): Promise<BankActionResult> {
   const providerId = configuredBankProviders()[0]?.id;
   if (!providerId) return { error: BANK_PROVIDER_NOT_CONFIGURED_MESSAGE };
 
   try {
-    const outcome = await completeBankLink(productionBankDependencies(), { organizationId, userId: user.id, providerId, publicToken: parsed.data.publicToken });
+    const outcome = await completeBankLink(productionBankDependencies(), { organizationId, userId, providerId, publicToken });
     switch (outcome.kind) {
       case "not_configured":
         return { error: outcome.message };
@@ -180,7 +210,7 @@ export async function completeBankLinkAction(_prev: BankActionResult, formData: 
         return { success: true, message: "Connected. Choose which account each bank account feeds before anything is imported." };
     }
   } catch (error) {
-    reportError(error, { scope: "bank", organizationId, userId: user.id, detail: { step: "complete_link" } });
+    reportError(error, { scope: "bank", organizationId, userId, detail: { step: "complete_link" } });
     return { error: GENERIC_FAILURE };
   }
 }
@@ -206,8 +236,16 @@ export async function completeBankReauthAction(_prev: BankActionResult, formData
   const access = await bankAccess(client, organizationId);
   if (!access.ok) return { error: access.error };
 
+  const result = await finishReauth(client, organizationId, user.id, connectionId);
+  if (result.success) await clearBankLinkStateCookie();
+  return result;
+}
+
+/** The repair, for an organization the caller has already been authorized
+ *  in. Shared by the in-page path and the OAuth return. */
+async function finishReauth(client: Awaited<ReturnType<typeof createClient>>, organizationId: string, userId: string, connectionId: string): Promise<BankActionResult> {
   try {
-    const outcome = await completeBankReauth(productionBankDependencies(), { organizationId, connectionId, userId: user.id });
+    const outcome = await completeBankReauth(productionBankDependencies(), { organizationId, connectionId, userId });
     switch (outcome.kind) {
       case "not_found":
         return { error: "That bank connection wasn't found." };
@@ -235,9 +273,105 @@ export async function completeBankReauthAction(_prev: BankActionResult, formData
         return { success: true, message: "Reconnected. Importing again from where it left off." };
     }
   } catch (error) {
-    reportError(error, { scope: "bank", organizationId, userId: user.id, detail: { step: "complete_reauth", connectionId } });
+    reportError(error, { scope: "bank", organizationId, userId, detail: { step: "complete_reauth", connectionId } });
     return { error: GENERIC_FAILURE };
   }
+}
+
+// ── OAuth return ────────────────────────────────────────────────────────
+//
+// A bank that signs the customer in on its own site sends them back to ONE
+// fixed path (BANK_OAUTH_RETURN_PATH) for every organization. Neither action
+// below accepts an organization, a connection or a mode from the browser —
+// they come only from the session sealed when Link started — and neither
+// trusts that seal on its own: the session user must be the sealed user, and
+// membership, permission, entitlement and rate limits are checked again.
+
+const NO_SESSION_TO_RESUME = "There's no bank sign-in to finish here. Start again from Bank connections.";
+
+type SealedSession = NonNullable<ReturnType<typeof openBankLinkState>>;
+
+/** Opens the sealed session and checks it still belongs to whoever is signed
+ *  in now. A seal that is missing, forged, expired or someone else's is the
+ *  same answer: nothing to resume. */
+async function sealedSessionForCaller(): Promise<{ ok: true; state: SealedSession } | { ok: false; error: string }> {
+  const keyset = bankLinkStateKeyset();
+  const state = keyset ? openBankLinkState(await readBankLinkStateCookie(), keyset, new Date()) : null;
+  if (!state) return { ok: false, error: NO_SESSION_TO_RESUME };
+
+  const user = await requireUser();
+  if (user.id !== state.userId) {
+    // Another person's session left in this browser. Theirs to finish, not
+    // this user's — and it cannot be finished now, so it goes.
+    await clearBankLinkStateCookie();
+    return { ok: false, error: NO_SESSION_TO_RESUME };
+  }
+  return { ok: true, state };
+}
+
+/**
+ * Called by the fixed return page to re-open the SAME Link session the
+ * customer started. Returns the Link token (to the page's memory only — it is
+ * never stored in the browser) and the organization the server sealed.
+ */
+export async function resumeBankOauthAction(): Promise<BankActionResult> {
+  const sealed = await sealedSessionForCaller();
+  if (!sealed.ok) return { error: sealed.error };
+  const { state } = sealed;
+
+  const { membership } = await requireOrgMembership(state.organizationId);
+  if (!can(membership.role, "bank:manage")) {
+    await clearBankLinkStateCookie();
+    return { error: state.mode === "reauthenticate" ? "Only an owner or admin can repair a bank connection." : "Only an owner or admin can connect a bank." };
+  }
+
+  return { success: true, linkToken: state.linkToken, mode: state.mode, organizationId: state.organizationId };
+}
+
+const completeOauthSchema = z.object({ publicToken: z.string().min(1).max(2048).optional() });
+
+/**
+ * Finishes the Link session after a bank OAuth return. The organization, the
+ * connection and the mode are the sealed ones; anything else in the request —
+ * an `organizationId` included — is not even read.
+ */
+export async function completeBankOauthAction(_prev: BankActionResult, formData: FormData): Promise<BankActionResult> {
+  const parsed = completeOauthSchema.safeParse({ publicToken: field(formData, "publicToken") || undefined });
+  if (!parsed.success) return { error: "That request isn't valid." };
+
+  const sealed = await sealedSessionForCaller();
+  if (!sealed.ok) return { error: sealed.error };
+  const { state } = sealed;
+  const { organizationId } = state;
+
+  const { user, membership } = await requireOrgMembership(organizationId);
+  if (!can(membership.role, "bank:manage")) {
+    await clearBankLinkStateCookie();
+    return { error: state.mode === "reauthenticate" ? "Only an owner or admin can repair a bank connection." : "Only an owner or admin can connect a bank." };
+  }
+  // Refused but retryable: the seal stays until it expires.
+  const limited = await enforceRateLimit("bankLinkSession", { bankLinkSessionPerUser: user.id });
+  if (!limited.allowed) return { error: limited.message };
+
+  const client = await createClient();
+  const access = await bankAccess(client, organizationId);
+  if (!access.ok) {
+    await clearBankLinkStateCookie();
+    return { error: access.error };
+  }
+
+  let result: BankActionResult;
+  if (state.mode === "reauthenticate" && state.connectionId) {
+    result = await finishReauth(client, organizationId, user.id, state.connectionId);
+  } else {
+    if (!parsed.data.publicToken) return { error: "The bank didn't return anything to complete. Nothing was connected." };
+    result = await finishLink(client, organizationId, user.id, parsed.data.publicToken);
+  }
+
+  // One use. A public token is single-use at the provider, so a failed
+  // exchange cannot be retried with this seal either: the customer starts again.
+  await clearBankLinkStateCookie();
+  return { ...result, organizationId };
 }
 
 // ── Sync ────────────────────────────────────────────────────────────────

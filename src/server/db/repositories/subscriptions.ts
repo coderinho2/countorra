@@ -19,6 +19,9 @@ export interface Subscription {
    *  entitled until then — this is a scheduled end, not an immediate one. */
   cancelAtPeriodEnd: boolean;
   canceledAt: string | null;
+  /** Set while a server-side deletion is canceling this workspace's billing
+   *  (migration 0050). Checkout and the portal refuse while it is recent. */
+  deletionLockedAt: string | null;
 }
 
 function toSubscription(row: SubscriptionRow): Subscription {
@@ -32,6 +35,7 @@ function toSubscription(row: SubscriptionRow): Subscription {
     stripePriceId: row.stripe_price_id,
     cancelAtPeriodEnd: row.cancel_at_period_end,
     canceledAt: row.canceled_at,
+    deletionLockedAt: row.deletion_locked_at ?? null,
   };
 }
 

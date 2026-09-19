@@ -13,6 +13,7 @@ import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { reportError, reportEvent } from "@/lib/observability";
 import { bankCredentialDependencies } from "@/server/bank-connections/runtime";
 import { releaseOrganizationBankCredentials } from "@/server/bank-connections/service";
+import { billingTeardownDependencies, secureBillingForDeletion } from "@/server/billing/deletion-safety";
 
 export interface AccountActionResult {
   error?: string;
@@ -118,6 +119,11 @@ export async function transferOrganizationOwnershipAction(organizationId: string
  *      REFUSE entirely if any workspace would lose data that is not theirs.
  *      Nothing is deleted while a blocker exists — not even the parts that
  *      would have been safe.
+ *   2b. Billing. Every workspace being deleted has its Stripe subscription
+ *      canceled — and Stripe's own answer checked — before anything else
+ *      happens (src/server/billing/deletion-safety.ts). If that cannot be
+ *      established, nothing is deleted. A workspace must never disappear
+ *      while Stripe may still be charging for it.
  *   3. Storage first, database second. Bucket objects have no foreign key and
  *      no cascade; if the rows went first, the files would be unreachable and
  *      permanent.
@@ -180,6 +186,12 @@ export async function deleteAccountAction(_prev: AccountActionResult, formData: 
 
   const admin = createAdminClient();
 
+  // Billing before anything destructive. The workspaces come from the plan,
+  // which was built from the caller's own memberships — never from the
+  // request — and so do the Stripe ids, which are read from our rows.
+  const billing = await secureBillingForDeletion(billingTeardownDependencies(admin), plan.organizationsToDelete);
+  if (!billing.ok) return { error: billing.message };
+
   try {
     // Bank-provider credentials before anything else, for every workspace
     // being deleted. The reference rows cascade with the organization, but the
@@ -235,7 +247,14 @@ export async function deleteAccountAction(_prev: AccountActionResult, formData: 
     // a failed path: this returns an error, and the caller never reaches the
     // sign-out and redirect below.
     reportError(error, { scope: "security", userId: user.id, detail: { step: "execute_plan" } });
-    return { error: "We couldn't finish deleting your account. Nothing further was removed — please contact support." };
+    // Surviving workspaces may be billed again if their owner chooses.
+    await billing.release();
+    return {
+      error:
+        billing.canceled > 0
+          ? "We couldn't finish deleting your account. Your subscription has been canceled and will not be charged again, but nothing further was removed — please contact support."
+          : "We couldn't finish deleting your account. Nothing further was removed — please contact support.",
+    };
   }
 
   reportEvent("account_deleted", {

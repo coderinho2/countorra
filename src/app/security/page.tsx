@@ -6,8 +6,8 @@ import { LockMark } from "@/components/marketing/lock-mark";
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr/ArrowRight";
 
 export const metadata: Metadata = {
-  title: "Security — Countorra",
-  description: "Authentication, authorization, data isolation, and the AI action-control gate.",
+  title: "Security",
+  description: "Authentication, authorization, data isolation, encrypted bank credentials, webhook verification, and the AI action-control gate.",
 };
 
 const REQUEST_FLOW = ["Your request", "Row-level security policy, evaluated per query", "Only your organization's rows"];
@@ -50,11 +50,40 @@ const SECTIONS = [
     title: "AI action control",
     body: "The assistant can read, analyze, and calculate freely — every calculation runs through a deterministic engine, never invented by the model. Any action that would write or delete a record is held in a pending state until a privileged member explicitly confirms it.",
   },
+  {
+    number: "07",
+    title: "Bank connections",
+    body: "Bank sign-in happens in Plaid's window: Countorra never receives your bank username or password. The access key Plaid issues for a connection is encrypted with AES-256-GCM before it is stored, under a key held only in the server environment and never in the database, in a table no member role can read. It is never sent to the browser. Returning from a bank's own sign-in page uses one fixed address for everyone; which workspace you return to comes from an encrypted, server-issued session tied to your sign-in, never from the address itself.",
+  },
+  {
+    number: "08",
+    title: "Provider credentials and webhooks",
+    body: "Credentials for Plaid, Stripe and our other providers exist only on the server — none is ever included in what your browser downloads. Messages Plaid and Stripe send to Countorra are verified against their signatures before anything in them is acted on, and a message delivered twice is processed once.",
+  },
+  {
+    number: "09",
+    title: "Background work",
+    body: "Bank imports run in a background worker on the server. It can be started only with a deployment secret, it is rate limited like any other caller, and every job it runs is bound to one workspace — it cannot read or write another's data. It stops itself well inside its time limit, and work interrupted part-way is picked up again without being duplicated.",
+  },
+  {
+    number: "10",
+    title: "Monitoring",
+    body: "Errors and security-relevant events — refused sign-ins, rate limits, rejected webhooks, background-worker health — are recorded through one filter that removes passwords, tokens, email addresses, amounts and the content of AI questions before anything is written.",
+  },
+  {
+    number: "11",
+    title: "Deleting your account",
+    body: "Account deletion is self-serve and requires your password again. First, Countorra cancels the Stripe subscription of every workspace being deleted and confirms with Stripe that nothing can be charged again; if that cannot be confirmed, nothing is deleted. Then it asks Plaid to end its access and destroys every stored bank access key; if a key cannot be destroyed, nothing is deleted. Documents are removed from storage, then the workspaces you alone use, then your sign-in. A workspace cannot be deleted directly from the browser, and the database refuses to delete one whose subscription can still be charged.",
+  },
 ];
 
+/** Said plainly, because its absence would otherwise be read as a claim. */
+const NOT_CLAIMED =
+  "Countorra has not been audited or certified by a third party — no SOC 2 report, ISO 27001 certification, PCI DSS certification or independent penetration test. Card payments are handled entirely by Stripe, so card numbers never reach Countorra. No system is perfectly secure.";
+
 /**
- * Security (product spec §9). Six numbered, technically-grounded
- * sections rather than a card grid — every sentence here maps to a real
+ * Security (product spec §9). Numbered, technically-grounded sections
+ * (07–11 added in Task 16) rather than a card grid — every sentence here maps to a real
  * migration, policy, or code path (see ARCHITECTURE.md), nothing is a
  * marketing claim, a certification, or an invented statistic.
  */
@@ -133,6 +162,15 @@ export default function SecurityPage() {
             </Reveal>
           ))}
         </div>
+      </section>
+
+      <section className="mx-auto max-w-[820px] px-6 pb-14 lg:px-10">
+        <Reveal>
+          <div className="rounded-md border border-border-subtle bg-surface-sunken p-4">
+            <p className="text-[13px] font-semibold text-text-primary">What we do not claim</p>
+            <p className="mt-1 max-w-[64ch] text-[13px] leading-[1.6] text-text-secondary">{NOT_CLAIMED}</p>
+          </div>
+        </Reveal>
       </section>
 
       <section className="border-t border-border-subtle">

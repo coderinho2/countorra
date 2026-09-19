@@ -14,7 +14,7 @@ const original = { ...process.env };
 async function freshEnv() {
   // serverEnv() caches its parse, so each case needs the module re-evaluated.
   vi.resetModules();
-  return import("./env");
+  return import("./server-env");
 }
 
 beforeEach(() => {

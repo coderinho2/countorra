@@ -117,9 +117,18 @@ describe("org_id_of_* is not a cross-tenant oracle for authenticated users", () 
 describe("an organization can actually be deleted", () => {
   // 0024's last-owner trigger fired on the membership rows that an
   // organization delete cascades to, aborting every organization deletion.
-  it("the owner can delete their organization, cascading its members", async () => {
+  //
+  // Since 0050 the deletion is server-side only (the re-authenticated
+  // account flow, which cancels Stripe billing and releases bank credentials
+  // first), so it runs as the service role here. The owner's own session is
+  // refused outright — see tests/rls/billing-safe-deletion.test.ts.
+  it("the owner's own session can no longer delete it directly", async () => {
     await db.asUser(owner);
-    const deleted = await db.query(`delete from organizations where id = $1 returning id`, [orgA]);
+    await expect(db.query(`delete from organizations where id = $1 returning id`, [orgA])).rejects.toThrow(/permission denied/i);
+  });
+
+  it("the server-side deletion removes the organization, cascading its members", async () => {
+    const deleted = await db.asAdmin((query) => query(`delete from organizations where id = $1 returning id`, [orgA]));
     expect(deleted.rows).toHaveLength(1);
 
     await db.asAdmin(async (query) => {
@@ -134,8 +143,7 @@ describe("an organization can actually be deleted", () => {
       expect((await query(`select * from audit_logs where organization_id = $1`, [orgA])).rows.length).toBeGreaterThan(0);
     });
 
-    await db.asUser(owner);
-    expect((await db.query(`delete from organizations where id = $1 returning id`, [orgA])).rows).toHaveLength(1);
+    expect((await db.asAdmin((query) => query(`delete from organizations where id = $1 returning id`, [orgA]))).rows).toHaveLength(1);
 
     await db.asAdmin(async (query) => {
       // The audit rows survive, detached rather than deleted.

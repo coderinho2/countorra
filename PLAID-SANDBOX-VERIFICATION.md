@@ -37,7 +37,7 @@ and `src/lib/env.test.ts`.
 | `PLAID_WEBHOOK_URL` | a **public https** URL ending in `/api/bank-connections/webhooks/plaid` |
 | `BANK_CREDENTIAL_ENCRYPTION_KEY` | `openssl rand -base64 32`; the plural `…KEYS` is accepted as an alias |
 | `BANK_SYNC_WORKER_SECRET` | `openssl rand -base64 32` |
-| `PLAID_REDIRECT_URI` | **leave unset** — the OAuth return path has a known blocker ([DEPLOYMENT.md §6](DEPLOYMENT.md#known-blocker-the-oauth-return-page-is-per-organization)); use a non-OAuth sandbox institution |
+| `PLAID_REDIRECT_URI` | `http://localhost:3000/app/bank-connections/oauth` locally, or the preview alias's equivalent — registered in the Plaid dashboard; only needed to test an OAuth sandbox institution |
 
 Put them in `.env.local` (git-ignored) or the host's environment. Never in
 source, `.env.example`, a `NEXT_PUBLIC_*` name, a log, a screenshot or a

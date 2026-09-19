@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import type { BankConnectionProvider, ProviderSecretStore } from "@/domain/bank-connections/provider";
-import { serverEnv } from "@/lib/env";
+import { serverEnv } from "@/lib/server-env";
 import { parseCredentialKeyset, type CredentialKeyset } from "./credential-crypto";
 import { createEncryptedSecretStore } from "./secret-store";
 import { createPlaidProvider } from "./providers/plaid/adapter";
@@ -63,6 +63,16 @@ function credentialKeyset(): CredentialKeyset | null {
 export function configuredSecretStore(admin: Client): ProviderSecretStore | null {
   const keyset = credentialKeyset();
   return keyset ? createEncryptedSecretStore(admin, keyset) : null;
+}
+
+/**
+ * The keyset the sealed Link session (./link-state.ts) derives its own key
+ * from. The same material, never the same key: link-state derives a separate
+ * one with HKDF under its own label. Null exactly when there is no credential
+ * store — and then no bank can be linked, so there is nothing to seal.
+ */
+export function bankLinkStateKeyset(): CredentialKeyset | null {
+  return credentialKeyset();
 }
 
 /** Test seam: forget what the environment said. */

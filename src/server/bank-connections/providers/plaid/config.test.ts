@@ -22,7 +22,7 @@ const TEST_KEY = `test:${Buffer.alloc(32, 7).toString("base64")}`;
 
 const env: Record<string, string | undefined> = {};
 
-vi.mock("@/lib/env", () => ({
+vi.mock("@/lib/server-env", () => ({
   serverEnv: () => env,
 }));
 
@@ -92,5 +92,38 @@ describe("which Plaid host this deployment can reach", () => {
     expect(version).not.toContain("client-id-value");
     expect(version).not.toContain("secret-value");
     expect(version).not.toContain(TEST_KEY);
+  });
+});
+
+describe("the OAuth redirect URI Plaid is given", () => {
+  const base = () => ({ PLAID_CLIENT_ID: "client", PLAID_SECRET: "secret", PLAID_ENV: "sandbox", BANK_CREDENTIAL_ENCRYPTION_KEY: TEST_KEY });
+
+  it("is accepted when it is the one fixed return path", async () => {
+    Object.assign(env, base(), { PLAID_REDIRECT_URI: "https://countorra.example/app/bank-connections/oauth" });
+    const { plaidConfig } = await loadConfig();
+    expect(plaidConfig()?.redirectUri).toBe("https://countorra.example/app/bank-connections/oauth");
+  });
+
+  it("is refused when it names an organization — it would work for one workspace only", async () => {
+    Object.assign(env, base(), { PLAID_REDIRECT_URI: "https://countorra.example/app/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/bank-connections/oauth" });
+    const { plaidConfig } = await loadConfig();
+    expect(() => plaidConfig()).toThrow(/fixed bank OAuth return path \(wrong_path\)/);
+  });
+
+  it("never echoes the configured value in that error", async () => {
+    Object.assign(env, base(), { PLAID_REDIRECT_URI: "https://countorra.example/app/bank-connections/oauth?token=abc123" });
+    const { plaidConfig } = await loadConfig();
+    expect(() => plaidConfig()).toThrow(/has_query_or_fragment/);
+    try {
+      plaidConfig();
+    } catch (error) {
+      expect(String(error)).not.toContain("abc123");
+    }
+  });
+
+  it("is optional: without it, non-OAuth banks still link", async () => {
+    Object.assign(env, base());
+    const { plaidConfig } = await loadConfig();
+    expect(plaidConfig()?.redirectUri).toBeNull();
   });
 });

@@ -172,7 +172,7 @@ describe("no Stripe secret is reachable from the browser", () => {
 
   it("never names a Stripe variable with a NEXT_PUBLIC_ prefix", () => {
     // The one mistake that would put a secret key in the client bundle.
-    for (const file of [".env.example", "src/server/billing/stripe-config.ts", "src/lib/env.ts"]) {
+    for (const file of [".env.example", "src/server/billing/stripe-config.ts", "src/lib/env.ts", "src/lib/server-env.ts"]) {
       expect(read(file), file).not.toMatch(/NEXT_PUBLIC_STRIPE/);
     }
   });
