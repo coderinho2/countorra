@@ -41,8 +41,9 @@ import { WORKER_ROUTE_MAX_DURATION_SECONDS, workerStartBudgetMs } from "@/domain
  *
  * VERCEL CRON
  *
- * `vercel.json` invokes this path every five minutes (production deployments
- * only — Vercel does not run crons on previews). Vercel sends
+ * `vercel.json` invokes this path once a day, 06:00 UTC (production
+ * deployments only — Vercel does not run crons on previews; the Hobby plan
+ * allows daily crons only and may fire any time within that hour). Vercel sends
  * `Authorization: Bearer $CRON_SECRET`, which is checked exactly like any
  * other caller against BANK_SYNC_WORKER_SECRET: a cron call gets no
  * exemption from the secret or from the rate limit. CRON_SECRET must
@@ -145,7 +146,7 @@ async function handle(request: Request): Promise<Response> {
     reportEvent("bank.worker_unauthorized", { scope: "security", detail: { route: "bank-worker", invoker: caller } }, "warning");
     // The one refusal that is OUR fault: the caller presented this
     // deployment's CRON_SECRET, and it is not the worker secret. That is
-    // Vercel Cron being refused every five minutes and every automatic import
+    // Vercel Cron being refused on every run and every automatic import
     // silently stopping — so it is an error, and only this exact case is.
     // A stranger's wrong guess can never trigger it.
     if (cronSecret && sameSecret(presented, cronSecret)) {

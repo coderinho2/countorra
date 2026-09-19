@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/bank-connections/worker",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 6 * * *"
     }
   ]
 }

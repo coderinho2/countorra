@@ -46,7 +46,7 @@ runbook), [SECURITY-RATE-LIMITING.md](SECURITY-RATE-LIMITING.md).
 | Supabase | the project in `.env.local` | **a separate project is strongly recommended** — see §4 | the production project |
 | Plaid | Sandbox | Sandbox | Production (after approval) |
 | Stripe | Test mode | Test mode | Live mode |
-| Worker cron | none — invoke by hand | none — Vercel does not run crons on previews | every 5 minutes (`vercel.json`) |
+| Worker cron | none — invoke by hand | none — Vercel does not run crons on previews | once a day, 06:00 UTC (`vercel.json`; Vercel Hobby allows daily only) |
 | Email (auth) | Supabase built-in | Supabase custom SMTP | Supabase custom SMTP |
 | `VERCEL_ENV` | unset | `preview` | `production` |
 
@@ -314,29 +314,40 @@ no data is touched.
 
 ## 7. Worker cron
 
-`vercel.json` runs `/api/bank-connections/worker` every five minutes on the
-**production** deployment (Vercel never runs crons on previews).
+`vercel.json` runs `/api/bank-connections/worker` **once a day** —
+`0 6 * * *`, i.e. some time between 06:00 and 06:59 UTC — on the
+**production** deployment (Vercel never runs crons on previews). Daily is what
+Vercel's Hobby plan allows: it refuses to deploy a cron that runs more often.
+Scheduled syncs therefore happen once a day; webhook-queued imports, retries
+and continuations wait for the next run; manual refreshes are unaffected. See
+[BANK-SYNC-WORKER.md §2](BANK-SYNC-WORKER.md#2-what-production-has-to-invoke) for the details, including the
+`bank.worker_backlog` warnings this cadence produces.
 
 | Requirement | Why |
 | --- | --- |
 | `BANK_SYNC_WORKER_SECRET` set | Without it the route answers 404 and nothing runs. |
 | `CRON_SECRET` = the same value | Vercel sends `Authorization: Bearer $CRON_SECRET`. The route accepts only the worker secret; a mismatch refuses every cron call and reports `bank.worker_cron_secret_mismatch` (error). |
-| Vercel **Pro** plan | Hobby is non-commercial and limited to daily crons; a `*/5` schedule is not allowed there. |
+| A daily schedule on Hobby | Hobby refuses any cron more frequent than daily. On **Pro**, `*/5 * * * *` is allowed — change `vercel.json` and `tests/server/vercel-config.test.ts` together. Hobby is for non-commercial use under Vercel's terms. |
 
 The route is bounded for serverless: `maxDuration = 60`, and no job or provider
 page starts after 30 s, so the page in flight always finishes and the rest
 continues on the next invocation. Cron calls get no exemption from the secret
-or the rate limit (120/hour per IP; the cron uses 12).
+or the rate limit (120/hour per IP; a daily cron uses 1, a five-minute
+scheduler 12).
 
 **Recommended:** a dead-man's switch. Create a check at healthchecks.io,
-Cronitor or Better Stack with a 5-minute period and ~15-minute grace, and put
-its ping URL in `BANK_SYNC_HEARTBEAT_URL` (Production only). The route pings it
+Cronitor or Better Stack with a **1-day period and ~3-hour grace** (Hobby fires
+within the scheduled hour) — or 5 minutes / ~15 minutes if you add a
+five-minute scheduler below — and put its ping URL in
+`BANK_SYNC_HEARTBEAT_URL` (Production only). The route pings it
 after every successful invocation; if the cron stops, you are alerted.
 
-### Not on Vercel
+### Not on Vercel — or more often than Hobby allows
 
-Any scheduler that can send an authenticated HTTP request works. Examples
-(replace placeholders; keep the secret in the scheduler's own secret store):
+Any scheduler that can send an authenticated HTTP request works, alongside the
+daily Vercel cron or instead of it. On Hobby, one of these is the way to get
+five-minute imports without upgrading. Examples (replace placeholders; keep the
+secret in the scheduler's own secret store):
 
 **GitHub Actions** (`.github/workflows/bank-worker.yml`; GitHub's minimum is
 every 5 minutes and it may be delayed under load):
@@ -681,8 +692,10 @@ Run on the Preview first (sandbox/test mode), then on Production.
 
 **Logs**
 
-- [ ] Vercel runtime logs show `bank.worker_invocation` every five minutes
-      with `invoker: "vercel-cron"`.
+- [ ] Vercel runtime logs show `bank.worker_invocation` once a day, between
+      06:00 and 06:59 UTC, with `invoker: "vercel-cron"` (the first one the
+      morning after the deployment; trigger it sooner from Vercel → Settings →
+      Cron Jobs → Run).
 - [ ] No `bank.worker_cron_secret_mismatch`.
 - [ ] The heartbeat monitor (if configured) shows regular pings.
 

@@ -42,16 +42,17 @@ Authorization: Bearer $BANK_SYNC_WORKER_SECRET
 * `?mode=work` — execute queued jobs only
 
 `GET` is accepted too, because Vercel Cron issues GET. Every verb needs the
-secret. Suggested cadence: **every five minutes**. Nothing breaks at any other
-cadence — a scheduled sync is keyed to a six-hour window, so more frequent
-invocations create no extra provider traffic, and less frequent ones only delay
-webhook-triggered imports.
+secret. Ideal cadence: **every five minutes**; the deployed Vercel cron runs
+**once a day** (see below). Nothing breaks at any cadence — a scheduled sync is
+keyed to a six-hour window, so more frequent invocations create no extra
+provider traffic, and less frequent ones only delay webhook-triggered imports,
+retries and continuations.
 
 On Vercel this is already configured — `vercel.json` at the repository root:
 
 ```json
 {
-  "crons": [{ "path": "/api/bank-connections/worker", "schedule": "*/5 * * * *" }]
+  "crons": [{ "path": "/api/bank-connections/worker", "schedule": "0 6 * * *" }]
 }
 ```
 
@@ -63,9 +64,25 @@ On Vercel this is already configured — `vercel.json` at the repository root:
   call is refused and the route reports `bank.worker_cron_secret_mismatch` at
   **error** severity (only when the caller presents `CRON_SECRET` itself, so a
   stranger's wrong guess can never raise it).
-* A five-minute schedule needs a plan that allows it. Vercel's Hobby plan is
-  for non-commercial use and runs crons at most once a day; a paid product
-  belongs on Pro, where `*/5` is allowed.
+* **Daily, because of Vercel Hobby.** Hobby refuses to deploy a cron that runs
+  more than once a day, and may fire a daily cron at any minute within the
+  scheduled hour (here 06:00–06:59 UTC, overnight in the US). What that means:
+  * each connection gets its scheduled sync once a day, overnight;
+  * a Plaid webhook's queued import, a retry and a continuation wait until the
+    next daily run — up to a day;
+  * manual refreshes, new links and repairs are unaffected: they run in the
+    request, not in the worker;
+  * a job that waited more than 30 minutes is reported as
+    `bank.worker_backlog` (warning) on the run that picks it up. On a daily
+    schedule that warning is expected whenever webhooks queued work, and is
+    not by itself a fault.
+* **For faster imports without Pro**, keep the daily Vercel cron and add an
+  external scheduler calling the same URL every five minutes — GitHub Actions
+  or Supabase `pg_cron` (examples in DEPLOYMENT.md §7). Both are free, both use
+  the same secret, and running more often costs nothing extra. On **Pro**, set
+  the schedule back to `*/5 * * * *` and update tests/server/vercel-config.test.ts.
+* Hobby is for non-commercial use under Vercel's terms; a paid product
+  belongs on Pro.
 
 Anywhere else — GitHub Actions, a systemd timer, Cloud Scheduler, a Kubernetes
 CronJob, Supabase `pg_cron` + `pg_net`, a long-running container in a `while`
@@ -225,7 +242,9 @@ entirely, they all go quiet together. Two things cover that:
 
 1. **A dead-man's switch.** Set `BANK_SYNC_HEARTBEAT_URL` to a check at any
    service that alerts when pings *stop* (healthchecks.io, Cronitor, Better
-   Stack heartbeats…) with a period of 5 minutes and a grace of ~15. The route
+   Stack heartbeats…) with a period matching the cadence — **1 day with ~3
+   hours' grace** for the daily Vercel cron (Hobby fires within the hour), or
+   5 minutes with ~15 minutes' grace for a five-minute scheduler. The route
    pings it after each successful invocation — not after a refused, rate-limited
    or failed one.
 2. **The backlog warning**, which catches the cron running but not keeping
