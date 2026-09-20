@@ -13,9 +13,9 @@ import { signOut } from "@/server/auth/actions";
 import type { PublicIdentity } from "@/lib/identity";
 import { BrandMark } from "./brand-mark";
 import { LockMark } from "./lock-mark";
-import { NavDropdown } from "./nav-dropdown";
 import { NAV_GROUPS, DIRECT_LINKS } from "./nav-data";
-import { isNavItemActive, desktopNavItemClass, mobileNavItemClass } from "./nav-active";
+import { isNavItemActive, mobileNavItemClass } from "./nav-active";
+import { DropdownNavigation, type DropdownNavItem } from "@/components/ui/dropdown-navigation";
 
 /** DESIGN.md §14's identity-mark language ("a small solid-color initial
  *  mark — a 24px square, radius-sm, ink background, single-letter glyph
@@ -55,6 +55,18 @@ export function MarketingHeader({
   appHref: string;
   settingsHref: string;
 }) {
+  /* Built from the same nav-data as before, so every destination is
+     unchanged: the three mega menus, then Pricing and Security as direct
+     links (Security keeps its lock mark). */
+  const desktopNavItems: DropdownNavItem[] = [
+    ...NAV_GROUPS.map((group) => ({ label: group.label, href: group.href, categories: group.categories })),
+    ...DIRECT_LINKS.map((link) => ({
+      label: link.label,
+      href: link.href,
+      adornment: link.label === "Security" ? <LockMark /> : undefined,
+    })),
+  ];
+
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openAccordion, setOpenAccordion] = useState<string | null>(null);
@@ -92,25 +104,11 @@ export function MarketingHeader({
             Countorra
           </Link>
 
-          <nav className="hidden items-center gap-7 lg:flex" aria-label="Primary">
-            {NAV_GROUPS.map((group) => (
-              <NavDropdown key={group.label} group={group} active={isNavItemActive(pathname, group.href)} />
-            ))}
-            {DIRECT_LINKS.map((link) => {
-              const active = isNavItemActive(pathname, link.href);
-              return (
-                <Link
-                  key={link.label}
-                  href={link.href}
-                  aria-current={active ? "page" : undefined}
-                  className={cn("group gap-1.5", desktopNavItemClass(active))}
-                >
-                  {link.label === "Security" && <LockMark />}
-                  {link.label}
-                </Link>
-              );
-            })}
-          </nav>
+          <DropdownNavigation
+            className="hidden lg:block"
+            items={desktopNavItems}
+            isActive={(href) => isNavItemActive(pathname, href)}
+          />
         </div>
 
         <div className="hidden items-center gap-2 lg:flex">

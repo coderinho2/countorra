@@ -5,6 +5,8 @@ import { SectionHeader } from "@/components/marketing/section-header";
 import { HeroPreview } from "@/components/marketing/hero-preview";
 import { HeroTerminal } from "@/components/marketing/hero-terminal";
 import { LiveSignal } from "@/components/marketing/live-signal";
+import { ProductShowcase } from "@/components/marketing/product-showcase";
+import { TechnologyStrip } from "@/components/marketing/technology-strip";
 import { FlowDiagram } from "@/components/marketing/flow-diagram";
 import { ProductStory } from "@/components/marketing/product-story";
 import { EntitySegments } from "@/components/marketing/entity-segments";
@@ -58,11 +60,37 @@ export default function Home() {
           </Reveal>
         </section>
 
+        {/* Product showcase — the surfaces themselves, turned by hand */}
+        <section id="showcase" className="border-t border-border-subtle bg-surface-sunken/40">
+          <div className="mx-auto max-w-[1200px] px-6 py-24 lg:px-10 lg:py-32">
+            <Reveal>
+              <SectionHeader index={1} title="Your finances, understood.">
+                An AI accountant and the workspace it works in — the ledger, the invoices, the
+                reports and the tax year, all reading from the same records.
+              </SectionHeader>
+            </Reveal>
+            <Reveal delayMs={80} className="mt-8">
+              <ProductShowcase />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* Infrastructure strip — what the product is built on, stated quietly
+            and with no claim of endorsement. Unnumbered on purpose: it is
+            credibility, not a chapter of the product story. */}
+        <section className="border-border-subtle border-t">
+          <div className="mx-auto max-w-[1200px] px-6 py-16 lg:px-10">
+            <Reveal>
+              <TechnologyStrip />
+            </Reveal>
+          </div>
+        </section>
+
         {/* Signature flow — editorial statement + technical diagram */}
         <section className="border-t border-border-subtle bg-surface-sunken/40">
           <div className="mx-auto max-w-[1200px] px-6 py-24 lg:px-10 lg:py-32">
             <Reveal>
-              <SectionHeader index={1} title="Raw activity becomes a decision.">
+              <SectionHeader index={2} title="Raw activity becomes a decision.">
                 Every transaction moves through the same chain — from what happened, to what it
                 means, to what to do next.
               </SectionHeader>
@@ -82,7 +110,7 @@ export default function Home() {
         <section id="solutions" className="border-b border-border-subtle bg-surface-sunken/40">
           <div className="mx-auto max-w-[1200px] px-6 py-24 lg:px-10 lg:py-32">
             <Reveal>
-              <SectionHeader index={2} title="Built to fit how you actually work with money.">
+              <SectionHeader index={3} title="Built to fit how you actually work with money.">
                 The same system adapts its focus depending on whether you are managing personal
                 finances, freelance income, or a business.
               </SectionHeader>
@@ -96,7 +124,7 @@ export default function Home() {
         {/* Documents */}
         <section id="documents" className="mx-auto max-w-[1200px] px-6 py-24 lg:px-10 lg:py-32">
           <Reveal>
-            <SectionHeader index={3} title="Your documents, put to work.">
+            <SectionHeader index={4} title="Your documents, put to work.">
               Invoices, receipts, and financial documents move from a folder to a system you can
               ask questions of.
             </SectionHeader>
@@ -110,7 +138,7 @@ export default function Home() {
         <section id="security" className="border-t border-border-subtle">
           <div className="mx-auto max-w-[1200px] px-6 py-24 lg:px-10 lg:py-32">
             <Reveal>
-              <SectionHeader index={4} title="Built on a security-first architecture.">
+              <SectionHeader index={5} title="Built on a security-first architecture.">
                 This is software for real financial data, so isolation and access control are part
                 of the design, not an afterthought.
               </SectionHeader>
