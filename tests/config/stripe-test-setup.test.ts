@@ -67,15 +67,128 @@ describe("the portal is limited to what Countorra supports", () => {
   it("switches only between the two Countorra prices, billing an upgrade immediately", () => {
     expect(features.subscription_update).toMatchObject({ enabled: true, default_allowed_updates: ["price"], proration_behavior: "always_invoice" });
     expect(features.subscription_update.products).toEqual([
-      { product: "prod_p", prices: ["price_p"] },
-      { product: "prod_b", prices: ["price_b"] },
+      { product: "prod_p", prices: ["price_p"], adjustable_quantity: { enabled: false } },
+      { product: "prod_b", prices: ["price_b"], adjustable_quantity: { enabled: false } },
     ]);
+  });
+
+  it("turns quantity changes and pausing off explicitly — Stripe enables quantity by default", () => {
+    for (const product of features.subscription_update.products) expect(product.adjustable_quantity).toEqual({ enabled: false });
+    expect(features.subscription_pause).toEqual({ enabled: false });
   });
 
   it("lets customers fix a payment method and see invoices, and edit billing email/address only", () => {
     expect(features.payment_method_update.enabled).toBe(true);
     expect(features.invoice_history.enabled).toBe(true);
     expect(features.customer_update.allowed_updates).toEqual(["email", "address"]);
+  });
+});
+
+/**
+ * Verifying a live configuration. The shape below is what Stripe returned for
+ * this project's test-mode default portal under API version
+ * 2026-08-26.dahlia — including the bug this guards: without an explicit
+ * `expand`, `subscription_update.products` is ABSENT, and the old check read
+ * that as "no products" and reported an already-correct portal as NO.
+ */
+describe("checking a portal configuration Stripe returned", () => {
+  const expected = [
+    { product: "prod_premium", prices: ["price_premium"] },
+    { product: "prod_business", prices: ["price_business"] },
+  ];
+  const stripeShape = (overrides: { products?: unknown; [k: string]: unknown } = {}) => {
+    const { products, ...rest } = overrides;
+    const subscriptionUpdate: Record<string, unknown> = {
+      billing_cycle_anchor: "unchanged",
+      default_allowed_updates: ["price"],
+      enabled: true,
+      proration_behavior: "always_invoice",
+      schedule_at_period_end: { conditions: [] },
+      trial_update_behavior: "end_trial",
+    };
+    if (products !== "absent") {
+      subscriptionUpdate.products = products ?? [
+        { product: "prod_premium", prices: ["price_premium"], adjustable_quantity: { enabled: false, maximum: null, minimum: 1 } },
+        { product: "prod_business", prices: ["price_business"], adjustable_quantity: { enabled: false, maximum: null, minimum: 1 } },
+      ];
+    }
+    return {
+      id: "bpc_test",
+      is_default: true,
+      active: true,
+      livemode: false,
+      metadata: { countorra: "customer-portal" },
+      features: {
+        customer_update: { allowed_updates: ["email", "address"], enabled: true },
+        invoice_history: { enabled: true },
+        payment_method_update: { enabled: true, payment_method_configuration: null },
+        subscription_cancel: { cancellation_reason: { enabled: false, feedback_options: [], options: ["too_expensive"] }, enabled: true, mode: "at_period_end", proration_behavior: "none" },
+        subscription_pause: { enabled: false },
+        subscription_update: subscriptionUpdate,
+      },
+      ...rest,
+    };
+  };
+
+  it("accepts a configuration that matches exactly", () => {
+    expect(setup.portalProblems(stripeShape(), expected)).toEqual([]);
+  });
+
+  it("does not mistake an UNEXPANDED response for a portal without products", () => {
+    // The original bug. It must say why it cannot tell, not claim a mismatch
+    // in the settings themselves.
+    expect(setup.portalProblems(stripeShape({ products: "absent" }), expected)).toEqual([
+      "switching products were not returned (the response was not expanded)",
+    ]);
+    expect(setup.PORTAL_EXPAND).toEqual(["features.subscription_update.products"]);
+  });
+
+  it("flags quantity changes, which Stripe turns on by default", () => {
+    const products = [
+      { product: "prod_premium", prices: ["price_premium"], adjustable_quantity: { enabled: true } },
+      { product: "prod_business", prices: ["price_business"], adjustable_quantity: { enabled: false } },
+    ];
+    expect(setup.portalProblems(stripeShape({ products }), expected)).toEqual(["customers can change quantity"]);
+  });
+
+  it("flags switching to any price that is not Countorra's, or a missing plan", () => {
+    const extra = [
+      { product: "prod_premium", prices: ["price_premium", "price_other"], adjustable_quantity: { enabled: false } },
+      { product: "prod_business", prices: ["price_business"], adjustable_quantity: { enabled: false } },
+    ];
+    const missing = [{ product: "prod_premium", prices: ["price_premium"], adjustable_quantity: { enabled: false } }];
+    for (const products of [extra, missing]) {
+      expect(setup.portalProblems(stripeShape({ products }), expected)).toContain("switching is not limited to exactly the Countorra Premium and Business prices");
+    }
+  });
+
+  it("flags each Countorra rule that is not met", () => {
+    const base = stripeShape();
+    const cases: [string, (c: ReturnType<typeof stripeShape>) => void][] = [
+      ["cancellation is not at period end", (c) => (c.features.subscription_cancel.mode = "immediately")],
+      ["cancellation prorates", (c) => (c.features.subscription_cancel.proration_behavior = "create_prorations")],
+      ["pausing is on", (c) => (c.features.subscription_pause.enabled = true)],
+      ["invoice history is off", (c) => (c.features.invoice_history.enabled = false)],
+      ["payment method update is off", (c) => (c.features.payment_method_update.enabled = false)],
+      ["billing information fields are not exactly email and address", (c) => (c.features.customer_update.allowed_updates = ["email", "address", "tax_id"])],
+      ["switching allows more than price changes", (c) => ((c.features.subscription_update as Record<string, unknown>).default_allowed_updates = ["price", "quantity"])],
+      ["switching does not bill immediately (always_invoice)", (c) => ((c.features.subscription_update as Record<string, unknown>).proration_behavior = "create_prorations")],
+      ["is a LIVE configuration", (c) => (c.livemode = true)],
+    ];
+    for (const [message, mutate] of cases) {
+      const config = structuredClone(base);
+      mutate(config);
+      expect(setup.portalProblems(config, expected), message).toEqual([message]);
+    }
+  });
+
+  it("reports a missing default rather than inventing one", () => {
+    expect(setup.portalProblems(null, expected)).toEqual(["no default configuration exists"]);
+  });
+
+  it("never names an id in a problem", () => {
+    const wrong = stripeShape({ products: [{ product: "prod_x", prices: ["price_x"], adjustable_quantity: { enabled: true } }], livemode: true });
+    for (const message of setup.portalProblems(wrong, expected)) expect(message).not.toMatch(/prod_|price_|bpc_/);
   });
 });
 

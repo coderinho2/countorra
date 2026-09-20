@@ -60,6 +60,11 @@ export const STRIPE_VARS = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIP
  *     upgrade's difference immediately: with `create_prorations` the charge
  *     waits for the next invoice, which a cancel-at-period-end never produces,
  *     so an upgrade followed by cancellation would get Business for free.
+ *   - NO quantity changes. Stripe turns `adjustable_quantity` ON for each
+ *     product unless told otherwise, which let a customer buy "2 × Premium":
+ *     double the price for nothing, because Countorra's entitlements are per
+ *     workspace and ignore quantity. So every product states it off.
+ *   - no pause (not a state Countorra models), no cancellation survey.
  */
 export function portalFeatures(products) {
   return {
@@ -67,8 +72,63 @@ export function portalFeatures(products) {
     payment_method_update: { enabled: true },
     customer_update: { enabled: true, allowed_updates: ["email", "address"] },
     subscription_cancel: { enabled: true, mode: "at_period_end", proration_behavior: "none", cancellation_reason: { enabled: false, options: [] } },
-    subscription_update: { enabled: true, default_allowed_updates: ["price"], proration_behavior: "always_invoice", products },
+    subscription_pause: { enabled: false },
+    subscription_update: {
+      enabled: true,
+      default_allowed_updates: ["price"],
+      proration_behavior: "always_invoice",
+      products: products.map((p) => ({ product: p.product, prices: p.prices, adjustable_quantity: { enabled: false } })),
+    },
   };
+}
+
+/**
+ * Where `products` lives in a portal configuration response.
+ *
+ * In API version 2026-08-26.dahlia, `features.subscription_update.products`
+ * is NOT part of a configuration response unless it is explicitly expanded —
+ * the key is simply absent. Reading it unexpanded sees no products at all,
+ * which is why an already-correct portal used to be reported as "NO". Every
+ * read and write below passes this expansion.
+ */
+export const PORTAL_EXPAND = ["features.subscription_update.products"];
+
+const sameSet = (a, b) => a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+
+/**
+ * Every way a portal configuration differs from Countorra's. Empty means it
+ * matches exactly. Messages name the setting, never an id.
+ *
+ * `expected` is [{ product, prices: [priceId] }] for the two Countorra plans.
+ */
+export function portalProblems(portal, expected) {
+  if (!portal) return ["no default configuration exists"];
+  const problems = [];
+  const f = portal.features ?? {};
+  if (portal.livemode) problems.push("is a LIVE configuration");
+  if (!portal.active) problems.push("is not active");
+  if (!f.invoice_history?.enabled) problems.push("invoice history is off");
+  if (!f.payment_method_update?.enabled) problems.push("payment method update is off");
+  if (!f.customer_update?.enabled) problems.push("billing information update is off");
+  else if (!sameSet(f.customer_update.allowed_updates ?? [], ["email", "address"])) problems.push("billing information fields are not exactly email and address");
+  if (!f.subscription_cancel?.enabled) problems.push("cancellation is off");
+  if (f.subscription_cancel?.mode !== "at_period_end") problems.push("cancellation is not at period end");
+  if (f.subscription_cancel?.proration_behavior !== "none") problems.push("cancellation prorates");
+  if (f.subscription_pause?.enabled) problems.push("pausing is on");
+  const update = f.subscription_update;
+  if (!update?.enabled) problems.push("plan switching is off");
+  if (!sameSet(update?.default_allowed_updates ?? [], ["price"])) problems.push("switching allows more than price changes");
+  if (update?.proration_behavior !== "always_invoice") problems.push("switching does not bill immediately (always_invoice)");
+  const products = update?.products;
+  if (!Array.isArray(products)) {
+    problems.push("switching products were not returned (the response was not expanded)");
+  } else {
+    const actual = products.map((p) => `${p.product}:${[...(p.prices ?? [])].sort().join(",")}`);
+    const wanted = expected.map((p) => `${p.product}:${[...p.prices].sort().join(",")}`);
+    if (!sameSet(actual, wanted)) problems.push("switching is not limited to exactly the Countorra Premium and Business prices");
+    if (products.some((p) => p.adjustable_quantity?.enabled)) problems.push("customers can change quantity");
+  }
+  return problems;
 }
 
 /** Test-mode keys only. Returns a reason when the key must not be used. */
@@ -237,25 +297,36 @@ async function main(mode) {
     report.push(`  .env.local: written ${change.written.join(", ") || "nothing"}; kept ${change.kept.join(", ") || "nothing"}${change.conflicts.length ? `; DISAGREES WITH STRIPE: ${change.conflicts.join(", ")} (not replaced)` : ""}`);
   }
 
-  const defaults = await stripe.billingPortal.configurations.list({ is_default: true, limit: 1 });
+  // The DEFAULT configuration is the one Countorra's portal sessions use (they
+  // pass no configuration id). Stripe's API cannot create a default — only
+  // the Dashboard's "Save" does — so setup updates it in place and never
+  // creates a second, non-default configuration nobody would see.
+  const defaults = await stripe.billingPortal.configurations.list({ is_default: true, limit: 1, expand: PORTAL_EXPAND.map((f) => `data.${f}`) });
   let portal = defaults.data[0] ?? null;
+  let portalAction = "";
+  let problems = portalProducts.length === PLANS.length ? portalProblems(portal, portalProducts) : ["the Countorra prices are not both valid, so the portal cannot be checked"];
   if (portal && mode === "setup" && portalProducts.length === PLANS.length) {
-    portal = await stripe.billingPortal.configurations.update(portal.id, { features: portalFeatures(portalProducts), metadata: { countorra: "customer-portal" } });
+    if (problems.length > 0) {
+      portal = await stripe.billingPortal.configurations.update(portal.id, {
+        features: portalFeatures(portalProducts),
+        metadata: { countorra: "customer-portal" },
+        expand: PORTAL_EXPAND,
+      });
+      problems = portalProblems(portal, portalProducts);
+      portalAction = problems.length === 0 ? "updated to Countorra's settings" : "updated, but Stripe did not accept every setting";
+    } else {
+      portalAction = "already matched; nothing changed";
+    }
   }
-  const portalOk = Boolean(
-    portal &&
-      portal.active &&
-      portal.features.subscription_cancel.enabled &&
-      portal.features.subscription_cancel.mode === "at_period_end" &&
-      portal.features.payment_method_update.enabled &&
-      portal.features.subscription_update.enabled &&
-      portal.features.subscription_update.proration_behavior === "always_invoice" &&
-      (portal.features.subscription_update.products ?? []).length === PLANS.length,
-  );
+  const portalOk = Boolean(portal) && problems.length === 0;
   line(
     "Customer Portal configured (default)",
     portalOk,
-    !portal ? "no default yet: open Dashboard (TEST mode) → Settings → Billing → Customer portal → Save, then run `setup`" : portalOk ? "" : "run `setup` to apply Countorra's settings",
+    !portal
+      ? "no default yet: open Dashboard (TEST mode) → Settings → Billing → Customer portal → Save, then run `setup`"
+      : portalOk
+        ? portalAction
+        : `${problems.join("; ")}${mode === "check" ? " — run `setup`" : ""}`,
   );
 
   const cli = process.env.PATH?.split(path.delimiter).some((dir) => existsSync(path.join(dir, process.platform === "win32" ? "stripe.exe" : "stripe"))) ?? false;
