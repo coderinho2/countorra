@@ -6,6 +6,20 @@ export const signUpSchema = z.object({
   fullName: z.string().min(1, "Full name is required.").max(200),
 });
 
+/**
+ * Sign-up collects a given and a family name; the account stores a single
+ * display name (`raw_user_meta_data.full_name`, which src/lib/identity.ts
+ * reads). Composing the two halves here — shared by the form's own validation
+ * and by the Server Action — keeps both fields real inputs without adding a
+ * second name column to anything downstream.
+ */
+export const givenNameSchema = z.string().trim().min(1, "First name is required.").max(100);
+export const familyNameSchema = z.string().trim().min(1, "Last name is required.").max(100);
+
+export function composeFullName(firstName: string, lastName: string): string {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+}
+
 export const signInSchema = z.object({
   email: z.email(),
   password: z.string().min(1, "Password is required."),

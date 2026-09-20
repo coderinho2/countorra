@@ -4,6 +4,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/server/supabase/server";
 import { publicEnv } from "@/lib/env";
 import {
+  composeFullName,
+  familyNameSchema,
+  givenNameSchema,
   requestPasswordResetSchema,
   resetPasswordSchema,
   signInSchema,
@@ -50,11 +53,39 @@ async function limitAuthAttempt(
   return decision.allowed ? null : decision.message;
 }
 
+/**
+ * Resolves the one display name the account stores from whichever name fields
+ * the request carried.
+ *
+ * The sign-up form collects a given and a family name separately, which is
+ * what people expect to type. A posted `fullName` is still accepted unchanged,
+ * so this action's existing contract is untouched — nothing that already
+ * submits to it has to be rewritten, and the stored shape
+ * (`raw_user_meta_data.full_name`, read by src/lib/identity.ts) is the same
+ * either way.
+ */
+function submittedFullName(formData: FormData): { fullName: unknown } | { error: string } {
+  const firstName = formData.get("firstName");
+  const lastName = formData.get("lastName");
+  if (firstName === null && lastName === null) return { fullName: formData.get("fullName") };
+
+  const given = givenNameSchema.safeParse(typeof firstName === "string" ? firstName : "");
+  if (!given.success) return { error: given.error.issues[0]?.message ?? "Invalid input." };
+
+  const family = familyNameSchema.safeParse(typeof lastName === "string" ? lastName : "");
+  if (!family.success) return { error: family.error.issues[0]?.message ?? "Invalid input." };
+
+  return { fullName: composeFullName(given.data, family.data) };
+}
+
 export async function signUp(_prev: AuthActionResult, formData: FormData): Promise<AuthActionResult> {
+  const name = submittedFullName(formData);
+  if ("error" in name) return { error: name.error };
+
   const parsed = signUpSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
-    fullName: formData.get("fullName"),
+    fullName: name.fullName,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
 

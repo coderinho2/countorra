@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/ui/error-state";
 import { FormField } from "@/components/auth/form-field";
+import { AuthShell } from "@/components/auth/auth-shell";
 
 function validateEmail(value: string): string | undefined {
   const result = requestPasswordResetSchema.shape.email.safeParse(value);
@@ -112,8 +113,10 @@ function ForgotPasswordForm() {
 
 export default function ForgotPasswordPage() {
   return (
-    <Suspense fallback={null}>
-      <ForgotPasswordForm />
-    </Suspense>
+    <AuthShell>
+      <Suspense fallback={null}>
+        <ForgotPasswordForm />
+      </Suspense>
+    </AuthShell>
   );
 }

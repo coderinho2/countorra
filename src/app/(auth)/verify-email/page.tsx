@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { EnvelopeSimple } from "@phosphor-icons/react/dist/ssr/EnvelopeSimple";
 import { Button } from "@/components/ui/button";
+import { AuthShell } from "@/components/auth/auth-shell";
 
 /** DESIGN.md §16 empty-state pattern: one small line icon, an H4
  *  headline, one line of explanatory text, exactly one primary action —
  *  no illustration, no mascot. */
 export default function VerifyEmailPage() {
   return (
+    <AuthShell>
     <div className="flex flex-col items-center gap-5 text-center">
       <span className="flex size-12 items-center justify-center rounded-md border border-border-subtle bg-surface text-text-tertiary">
         <EnvelopeSimple size={24} />
@@ -29,5 +31,6 @@ export default function VerifyEmailPage() {
         <Link href="/login">Back to sign in</Link>
       </Button>
     </div>
+    </AuthShell>
   );
 }

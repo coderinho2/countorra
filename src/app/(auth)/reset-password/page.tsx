@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getRecoverySession } from "@/server/auth/recovery";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { ResetPasswordForm } from "./reset-password-form";
 
 /**
@@ -15,9 +16,16 @@ import { ResetPasswordForm } from "./reset-password-form";
  */
 export default async function ResetPasswordPage() {
   const recovery = await getRecoverySession();
-  if (recovery) return <ResetPasswordForm />;
+  if (recovery) {
+    return (
+      <AuthShell>
+        <ResetPasswordForm />
+      </AuthShell>
+    );
+  }
 
   return (
+    <AuthShell>
     <div className="flex flex-col gap-8">
       <h1 className="text-center text-[26px] leading-9 font-semibold tracking-[-0.01em] text-ink">Set a new password</h1>
 
@@ -37,5 +45,6 @@ export default async function ResetPasswordPage() {
         </Link>
       </p>
     </div>
+    </AuthShell>
   );
 }
