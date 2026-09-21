@@ -170,7 +170,7 @@ export function MarketingHeader({
       </div>
 
       {menuOpen && (
-        <div id="mobile-nav-panel" className="max-h-[calc(100dvh-64px)] overflow-y-auto border-t border-border-subtle bg-paper px-6 py-4 lg:hidden">
+        <div id="mobile-nav-panel" className="max-h-[calc(100dvh-64px)] overflow-y-auto border-y border-border-subtle bg-paper px-6 py-4 lg:hidden">
           <div className="flex flex-col">
             {NAV_GROUPS.map((group) => {
               const isOpen = openAccordion === group.label;

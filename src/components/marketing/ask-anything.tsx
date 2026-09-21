@@ -115,7 +115,9 @@ function AnswerTurn({ example }: { example: Example }) {
       </div>
 
       {example.metrics && (
-        <div className={cn("grid gap-3 rounded-md border border-border-subtle bg-surface-sunken p-4", example.metrics.length > 1 ? "grid-cols-3" : "")}>
+        <div className={cn("grid gap-3 rounded-md border border-border-subtle bg-surface-sunken p-4", // On a phone three columns are narrower than the leading figure, so it
+        // takes its own row and the two counts share the next.
+        example.metrics.length > 1 ? "grid-cols-3 max-sm:grid-cols-2 max-sm:[&>*:first-child]:col-span-2" : "")}>
           {example.metrics.map((m) => (
             <div key={m.label} className="flex flex-col gap-0.5">
               <span

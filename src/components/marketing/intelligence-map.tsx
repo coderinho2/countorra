@@ -26,7 +26,7 @@ export function IntelligenceMap() {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:grid-rows-2">
       <div className="rounded-md border border-border-subtle bg-surface p-6 lg:col-span-2 lg:row-span-2">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between max-sm:flex-col max-sm:items-start max-sm:gap-2">
           <div>
             <h3 className="text-base font-semibold text-ink">Cash flow</h3>
             <p className="text-[13px] text-text-secondary">Income and expenses, connected across every account</p>

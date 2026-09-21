@@ -24,6 +24,7 @@ const COLUMNS = [
   {
     label: "Resources",
     links: [
+      { label: "Help Centre", href: "/help" },
       { label: "How it works", href: "/resources#how-it-works" },
       { label: "Guides", href: "/resources#guides" },
     ],

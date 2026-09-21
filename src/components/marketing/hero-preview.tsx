@@ -316,7 +316,7 @@ export function HeroPreview() {
                   {view.rows.map((row) => (
                     <TableRow key={row.label}>
                       <TableCell className="text-[13px]">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 max-sm:flex-wrap max-sm:gap-y-1">
                           {row.label}
                           {row.badge === "overdue" && <Badge variant="negative">Overdue</Badge>}
                           {row.badge === "recurring" && <Badge variant="neutral">Recurring</Badge>}

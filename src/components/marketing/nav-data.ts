@@ -15,6 +15,7 @@ import { Buildings } from "@phosphor-icons/react/dist/ssr/Buildings";
 import { BookOpen } from "@phosphor-icons/react/dist/ssr/BookOpen";
 import { Compass } from "@phosphor-icons/react/dist/ssr/Compass";
 import { ShieldCheck } from "@phosphor-icons/react/dist/ssr/ShieldCheck";
+import { Lifebuoy } from "@phosphor-icons/react/dist/ssr/Lifebuoy";
 
 /**
  * Navigation content for the marketing header. Every href is either a
@@ -104,6 +105,7 @@ export const RESOURCES_MENU: NavGroup = {
     {
       label: "Learn",
       items: [
+        { label: "Help Centre", description: "How to use Countorra, and answers to common questions.", href: "/help", icon: Lifebuoy },
         { label: "How it works", description: "The product story, end to end.", href: "/resources#how-it-works", icon: Compass },
         { label: "Financial guides", description: "Practical guidance on organizing your finances.", href: "/resources#guides", icon: BookOpen },
         { label: "Security architecture", description: "How data isolation and access control work.", href: "/security", icon: ShieldCheck },

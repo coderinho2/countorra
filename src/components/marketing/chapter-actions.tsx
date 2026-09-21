@@ -53,14 +53,14 @@ export function ChapterActions() {
         {ACTIONS.map((action) => {
           const Icon = action.icon;
           return (
-            <div key={action.label} className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-3 last:border-0">
+            <div key={action.label} className="flex items-center justify-between gap-3 border-b max-sm:flex-wrap max-sm:gap-y-2 border-border-subtle px-3 py-3 last:border-0">
               <div className="flex items-center gap-3">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-sm border border-border-subtle text-text-primary">
                   <Icon size={15} weight="regular" />
                 </span>
                 <span className="text-[14px] text-text-primary">{action.label}</span>
               </div>
-              <Badge variant={action.mode === "confirm" ? "warning" : "neutral"}>
+              <Badge variant={action.mode === "confirm" ? "warning" : "neutral"} className="max-sm:ml-11">
                 {action.mode === "confirm" ? "Needs your confirmation" : "Runs instantly"}
               </Badge>
             </div>

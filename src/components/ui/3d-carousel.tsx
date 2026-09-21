@@ -215,7 +215,7 @@ function StaticRow({
   onSelect: (card: CarouselCard) => void;
 }) {
   return (
-    <ul className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-4">
+    <ul className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-4 max-sm:px-6">
       {cards.map((card) => (
         <li key={card.src} className="w-[min(72vw,320px)] shrink-0 snap-center">
           <button

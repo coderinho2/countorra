@@ -70,7 +70,10 @@ const CARDS: CarouselCard[] = [
 export function ProductShowcase() {
   return (
     <div className="flex flex-col gap-6">
-      <ThreeDPhotoCarousel cards={CARDS} />
+      {/* On a phone the stage runs to the screen edges (cancelling the
+          section's px-6), so turning cards leave at the edge of the screen
+          instead of being cut off 24px inside it. */}
+      <ThreeDPhotoCarousel cards={CARDS} className="max-sm:-mx-6 max-sm:w-[calc(100%+3rem)]" />
       <p className="text-text-tertiary mx-auto max-w-[52ch] text-center text-[12px]">
         Drag to turn the carousel, or select a card to enlarge it. Illustrations of Countorra&apos;s interface, drawn in the product&apos;s own design
         system.

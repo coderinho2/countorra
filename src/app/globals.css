@@ -249,6 +249,22 @@
       transform: translateY(0);
     }
   }
+
+  /* Accordion content (src/components/ui/accordion.tsx). The panel opens to
+     its full height at once and only its contents fade and settle — DESIGN.md
+     §22 keeps height off the list of animatable properties. */
+  --animate-disclose: disclose var(--duration-panel) var(--ease-out);
+
+  @keyframes disclose {
+    0% {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
 
 @layer base {

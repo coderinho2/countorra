@@ -31,7 +31,7 @@ export function LiveSignal() {
           <div className="mt-1.5 flex items-baseline gap-2">
             <span className="text-[13px] text-text-secondary">Recurring spending</span>
           </div>
-          <div className="mt-0.5 flex items-baseline gap-2">
+          <div className="mt-0.5 flex items-baseline gap-2 max-sm:flex-wrap max-sm:gap-y-0.5">
             <span className="font-numeric text-lg font-medium text-ink">$1,284.00</span>
             <span className="font-numeric text-[12px] text-text-secondary">/ year</span>
             <span className="font-numeric text-[12px] text-negative">+8.4% vs. average</span>
