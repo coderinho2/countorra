@@ -4,6 +4,7 @@ import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { CaretDown, Check } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/lib/utils";
+import { useCspNonce } from "@/components/security/csp-nonce";
 
 export const Select = SelectPrimitive.Root;
 export const SelectGroup = SelectPrimitive.Group;
@@ -45,22 +46,26 @@ SelectTrigger.displayName = "SelectTrigger";
 export const SelectContent = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
-  <SelectPrimitive.Portal>
-    <SelectPrimitive.Content
-      ref={ref}
-      position={position}
-      sideOffset={6}
-      className={cn(
-        "overlay-enter z-50 min-w-(--radix-select-trigger-width) rounded-md border border-border-subtle bg-surface p-1 shadow-[var(--shadow-level-2)]",
-        className,
-      )}
-      {...props}
-    >
-      <SelectPrimitive.Viewport>{children}</SelectPrimitive.Viewport>
-    </SelectPrimitive.Content>
-  </SelectPrimitive.Portal>
-));
+>(({ className, children, position = "popper", ...props }, ref) => {
+  const nonce = useCspNonce();
+  return (
+    <SelectPrimitive.Portal>
+      <SelectPrimitive.Content
+        ref={ref}
+        position={position}
+        sideOffset={6}
+        className={cn(
+          "overlay-enter z-50 min-w-(--radix-select-trigger-width) rounded-md border border-border-subtle bg-surface p-1 shadow-[var(--shadow-level-2)]",
+          className,
+        )}
+        {...props}
+      >
+        {/* Radix renders a <style> here; the CSP only admits it with the nonce. */}
+        <SelectPrimitive.Viewport nonce={nonce}>{children}</SelectPrimitive.Viewport>
+      </SelectPrimitive.Content>
+    </SelectPrimitive.Portal>
+  );
+});
 SelectContent.displayName = "SelectContent";
 
 export const SelectItem = React.forwardRef<

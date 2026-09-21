@@ -2,6 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { publicEnv } from "@/lib/env";
+import { sessionCookieOptions } from "@/lib/security/session-cookies";
 import type { Database } from "@/types/database";
 
 /**
@@ -19,6 +20,9 @@ export async function createClient() {
     publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
+      // HttpOnly, Secure over HTTPS, SameSite=Lax — see session-cookies.ts.
+      // Must match src/proxy.ts, the other place these cookies are written.
+      cookieOptions: sessionCookieOptions({ appUrl: publicEnv.NEXT_PUBLIC_APP_URL, onVercel: process.env.VERCEL === "1" }),
       cookies: {
         getAll() {
           return cookieStore.getAll();

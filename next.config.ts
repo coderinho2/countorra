@@ -1,52 +1,25 @@
 import type { NextConfig } from "next";
 import { SERVER_ACTION_BODY_LIMIT } from "./src/domain/documents/upload-limits";
+import { STATIC_ASSET_CONTENT_SECURITY_POLICY } from "./src/lib/security/content-security-policy";
 
 /**
- * Response security headers. There were none before this — no clickjacking
- * protection, no HSTS, no MIME-sniffing protection, and a default
- * `Referrer-Policy` that could leak an `/app/<orgId>/invoices/<invoiceId>`
- * URL (organization and record ids, in the path) to any third-party host a
- * user navigates to.
+ * Response security headers.
  *
- * What's deliberately NOT here: a `script-src` CSP. Next.js's App Router
- * emits inline bootstrap and flight-data scripts, so a useful `script-src`
- * needs per-request nonces plumbed through the proxy, and a `script-src`
- * with `'unsafe-inline'` is theatre — it would advertise a protection that
- * isn't there. The directives below are the ones that are meaningful
- * without nonces and that cannot break a legitimate page:
- * `frame-ancestors` (clickjacking, and it supersedes X-Frame-Options),
- * `base-uri` (stops an injected `<base>` from re-pointing every relative
- * URL), `form-action` (stops a form being posted to an attacker's host),
- * and `object-src` (plugin content). Adding a real nonce-based script-src
- * is tracked as remaining work in the audit report, not silently skipped.
+ * WHERE EACH ONE IS SET
  *
- * `connect-src` is left open on purpose: the browser client talks directly
- * to the project's Supabase host, which is environment-specific, and a
- * wrong value here fails closed in a way that looks like an outage.
+ * The Content-Security-Policy for pages is NOT here. It carries a fresh nonce
+ * per response, so it is built in src/proxy.ts
+ * (src/lib/security/content-security-policy.ts). It must not be set here as
+ * well: a response with two CSP headers is held to both, and a static one
+ * cannot carry the nonce — every script on every page would be blocked.
+ *
+ * What IS here applies to every response, including the ones the proxy never
+ * sees: `_next/static`, files in `public/`, and the two webhook endpoints.
  */
-/**
- * Note the absence of `default-src`. Adding it looks like a free win and is
- * not: `default-src 'self'` becomes the fallback for `script-src` and
- * `style-src`, which blocks the inline bootstrap/flight scripts the App
- * Router emits — the e2e suite caught this immediately, with server-rendered
- * pages that never hydrated, so every interactive control silently stopped
- * responding. Each directive below is one that changes nothing for a
- * legitimate page.
- */
-const CONTENT_SECURITY_POLICY = [
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  "upgrade-insecure-requests",
-].join("; ");
-
-const securityHeaders = [
-  { key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
-  // Two years, preloadable. Only ever honoured over HTTPS, so it is inert
-  // on http://localhost during development.
-  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+const baseSecurityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
+  // Superseded by CSP `frame-ancestors 'none'`; kept for browsers that
+  // predate it.
   { key: "X-Frame-Options", value: "DENY" },
   // Send the origin, never the path, cross-origin: /app/<orgId>/... paths
   // carry tenant and record identifiers.
@@ -55,6 +28,46 @@ const securityHeaders = [
   // Nothing in this product uses these; deny them rather than inherit the
   // browser default.
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()" },
+];
+
+/**
+ * HSTS: production only, and deliberately without `includeSubDomains` or
+ * `preload`.
+ *
+ * The previous value was `max-age=63072000; includeSubDomains; preload` on
+ * every deployment. Both extra flags are commitments about hosts this
+ * repository does not control or know: `includeSubDomains` forces every
+ * current and future *.countorra.com name onto HTTPS for two years — any
+ * subdomain a mail, docs or status provider serves over plain HTTP
+ * becomes unreachable — and `preload` invites browsers to hard-code that,
+ * a decision that takes months to reverse. hstspreload.org reports the
+ * domain as not submitted, so nothing is lost by withdrawing the invitation.
+ * Add either flag back only after every subdomain has been verified to serve
+ * HTTPS.
+ *
+ * `VERCEL_ENV === "production"` is the deployment signal the rest of the
+ * app uses (src/lib/env.ts). Vercel serves production only over HTTPS and
+ * redirects plain HTTP with a 308 before the app runs, so this header only
+ * ever travels over HTTPS. Browsers ignore it over HTTP regardless, which is
+ * why local `next start` needs no special case.
+ */
+const HSTS_HEADER = { key: "Strict-Transport-Security", value: "max-age=63072000" };
+
+/**
+ * Files served without the proxy — build output and `public/` — are never
+ * pages, so they get a policy that permits nothing. (An SVG opened directly
+ * is a document that can run script; this is what stops one from doing so.)
+ *
+ * They also get an explicit `Access-Control-Allow-Origin` naming this app.
+ * Vercel's CDN otherwise answers static and prerendered files with
+ * `Access-Control-Allow-Origin: *` — the "Cross-Domain Misconfiguration" ZAP
+ * reported. Countorra's own pages load these files same-origin and need no
+ * CORS grant at all; the header only narrows who else may read them.
+ */
+const APP_ORIGIN = new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").origin;
+const staticAssetHeaders = [
+  { key: "Content-Security-Policy", value: STATIC_ASSET_CONTENT_SECURITY_POLICY },
+  { key: "Access-Control-Allow-Origin", value: APP_ORIGIN },
 ];
 
 const nextConfig: NextConfig = {
@@ -82,7 +95,16 @@ const nextConfig: NextConfig = {
 
   async headers() {
     return [
-      { source: "/:path*", headers: securityHeaders },
+      {
+        source: "/:path*",
+        headers: process.env.VERCEL_ENV === "production" ? [...baseSecurityHeaders, HSTS_HEADER] : baseSecurityHeaders,
+      },
+      // Exactly the paths src/proxy.ts's matcher excludes.
+      { source: "/_next/static/:path*", headers: staticAssetHeaders },
+      { source: "/_next/image", headers: staticAssetHeaders },
+      { source: "/:file(.*\\.(?:svg|png|jpg|jpeg|webp|ico))", headers: staticAssetHeaders },
+      { source: "/api/stripe/:path*", headers: [{ key: "Content-Security-Policy", value: STATIC_ASSET_CONTENT_SECURITY_POLICY }] },
+      { source: "/api/bank-connections/webhooks/:path*", headers: [{ key: "Content-Security-Policy", value: STATIC_ASSET_CONTENT_SECURITY_POLICY }] },
       {
         // Authenticated pages must never sit in a shared or browser cache:
         // a back-button read of another user's dashboard on a shared

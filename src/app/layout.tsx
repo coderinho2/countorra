@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { publicEnv } from "@/lib/env";
+import { CspNonce } from "@/components/security/csp-nonce";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -74,13 +76,29 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+/**
+ * Every page is rendered per request, never prerendered at build time.
+ *
+ * The Content-Security-Policy allows only scripts carrying the nonce that
+ * src/proxy.ts generates for each response. A page prerendered at build time
+ * has its inline bootstrap scripts baked in without that nonce, so the
+ * browser would block them and the page would never hydrate.
+ * `connection()` opts the whole tree into request-time rendering, which is
+ * what lets Next.js stamp the current nonce onto every script it emits.
+ *
+ * A side effect worth having: pages like /login used to be served from
+ * Vercel's static cache with `Access-Control-Allow-Origin: *`; a dynamic
+ * response carries no CORS grant at all.
+ */
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  await connection();
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-paper text-text-primary">
+        <CspNonce />
         {children}
       </body>
     </html>

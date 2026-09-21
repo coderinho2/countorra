@@ -616,9 +616,9 @@ not exist, which is a different and more honest statement.
    harness only mocks. **Re-run `supabase db push` and re-verify `0024`
    against a real project before launch**, particularly the `revoke` statements
    and the storage policies.
-7. **A real CSP `script-src`.** Needs per-request nonces plumbed through
-   `proxy.ts` (M-7). Until then there is no script-injection defence in depth —
-   which is acceptable only because there is currently no injection sink.
+7. ~~**A real CSP `script-src`.**~~ **Resolved 2026-09-21** — nonce-based
+   `script-src` with `'strict-dynamic'`, plumbed through `proxy.ts`. See
+   "ZAP scan remediation" below.
 8. **Session revocation.** No way to invalidate a specific session or force
    sign-out everywhere; combined with I-4, a stolen session token is durable.
 
@@ -659,7 +659,7 @@ not exist, which is a different and more honest statement.
 
 **Strongly recommended before real users:**
 
-4. A nonce-based `script-src` CSP.
+4. ~~A nonce-based `script-src` CSP.~~ Done 2026-09-21 (see "ZAP scan remediation").
 5. Re-authentication for password changes, and a way to revoke sessions.
 6. Reconcile the free-plan entitlement/limit mismatch (I-2) before pricing is
    published.
@@ -673,3 +673,26 @@ into column-level and ordering constraints RLS cannot express, and into the
 difference between "a member of this organization" and "this person". Those
 are now closed and tested. With the three blocking items above resolved, I
 would be comfortable with real users' financial data in this system.
+
+---
+
+## ZAP scan remediation (2026-09-21)
+
+An OWASP ZAP 2.17 scan of `https://countorra.com` (2026-09-20) raised eight
+actionable alert types. Each was reproduced against production before it was
+changed, fixed at its cause, and pinned by tests in `tests/security/`.
+
+| Finding | Root cause | Fix |
+|---|---|---|
+| CSP: Wildcard Directive | No `default-src`, so every undeclared fetch directive allowed any host | Full per-request policy, `default-src 'self'`, every host named (`src/lib/security/content-security-policy.ts`) |
+| CSP: script-src unsafe-inline | No `script-src` at all — inline script of any kind was allowed | Per-request nonce + `'strict-dynamic'` from `src/proxy.ts`; every page rendered per request so the nonce reaches Next's scripts (`src/app/layout.tsx`) |
+| CSP: style-src unsafe-inline | No `style-src` | `style-src 'self' 'nonce-…'`; runtime `<style>` from Radix/react-remove-scroll gets the nonce (`src/components/security/csp-nonce.tsx`). One scoped exception: `style-src-attr 'unsafe-inline'` for server-rendered `style="…"` attributes |
+| Absence of Anti-CSRF Tokens | Relied on Next's Server Action Origin check (which only warns when `Origin` is missing, and does not cover Route Handlers) plus SameSite=Lax | Fetch-Metadata + Origin verification for every unsafe method in `src/proxy.ts` (`src/lib/security/request-origin.ts`) |
+| Cross-Domain Misconfiguration | Vercel's CDN adds `Access-Control-Allow-Origin: *` to static and prerendered files; `/login` was prerendered | No page is prerendered any more; static files name the app origin explicitly (`next.config.ts`) |
+| Cookie No HttpOnly Flag | `@supabase/ssr` default `httpOnly: false` | Shared cookie policy, `HttpOnly` (nothing in the browser reads the session) — `src/lib/security/session-cookies.ts` |
+| Cookie Without Secure Flag | Same default, no `secure` | `Secure` on every HTTPS deployment; off only for plain-HTTP localhost |
+| Strict-Transport-Security Header Not Set | Reported on a `304 Not Modified` from Vercel's cache, which omits custom headers; the `200` for the same file carries HSTS. Separately, the header claimed `includeSubDomains; preload` without either being verified | Production-only `max-age=63072000`; `includeSubDomains` and `preload` withdrawn until every subdomain is verified |
+
+Every page is now rendered per request (a prerendered page cannot carry a
+per-request nonce). This is the one architectural cost of the CSP fix.
+

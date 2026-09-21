@@ -1,3 +1,5 @@
+// First: stops Zod probing for `eval` in the browser. See zod-browser.ts.
+import "@/validation/zod-browser";
 import { z } from "zod";
 
 export const signUpSchema = z.object({

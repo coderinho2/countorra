@@ -234,7 +234,9 @@ After buying the domain:
 1. **Vercel** → Project → Settings → Domains: add `<your-domain>` and
    `www.<your-domain>` (redirect one to the other). Follow Vercel's DNS
    instructions (an `A` / `ALIAS` record, or delegate nameservers). TLS is
-   issued automatically; HSTS is already sent by the app (`next.config.ts`).
+   issued automatically; HSTS is already sent by the app on production
+   deployments (`next.config.ts`) — without `includeSubDomains` or `preload`.
+   Add those only after every subdomain is verified to serve HTTPS.
 2. **Vercel env**: set `NEXT_PUBLIC_APP_URL=https://<your-domain>` for
    Production and **redeploy** (it is inlined at build time).
 3. **Supabase**: Site URL and redirect allowlist (§4).
