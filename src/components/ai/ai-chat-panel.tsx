@@ -259,7 +259,7 @@ export function AiChatPanel({
             )}
             {pending && (
               <div className="flex items-center gap-2 py-4">
-                <span aria-hidden="true" className="ai-thinking-dot size-1 rounded-full bg-accent" />
+                <span aria-hidden="true" className="ai-thinking-dot size-1 rounded-full bg-gold" />
                 <span className="text-[13px] text-text-tertiary">Working through your books…</span>
               </div>
             )}
@@ -293,9 +293,9 @@ export function AiChatPanel({
               onClick={() => send(input)}
               aria-label="Send"
               className={cn(
-                "flex size-10 shrink-0 items-center justify-center rounded-sm bg-accent text-accent-contrast",
+                "flex size-10 shrink-0 items-center justify-center rounded-sm bg-gold text-accent-contrast",
                 "transition-[background-color,transform,opacity] duration-[var(--duration-fast)] ease-out",
-                "hover:bg-accent-hover active:scale-[0.97]",
+                "hover:bg-gold-hover active:scale-[0.97]",
                 "disabled:bg-surface-sunken disabled:text-text-tertiary disabled:active:scale-100",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
               )}

@@ -31,17 +31,17 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           alignItems: "center",
           justifyContent: "center",
           padding: "2rem",
-          background: "#FAFAF8",
-          color: "#1A1A17",
+          background: "#F5F2EA",
+          color: "#171715",
           fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif",
         }}
       >
         <div style={{ maxWidth: "28rem", textAlign: "center" }}>
-          <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6B6B63" }}>
+          <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6F6B62" }}>
             Countorra
           </p>
           <h1 style={{ margin: "1rem 0 0", fontSize: 28, lineHeight: 1.2, fontWeight: 500 }}>Something went wrong</h1>
-          <p style={{ margin: "1rem 0 0", fontSize: 15, lineHeight: 1.6, color: "#44443E" }}>
+          <p style={{ margin: "1rem 0 0", fontSize: 15, lineHeight: 1.6, color: "#6F6B62" }}>
             The application failed to start. Your data hasn&apos;t been changed — nothing was saved or modified.
           </p>
           <button
@@ -52,8 +52,8 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
               padding: "0 1.25rem",
               borderRadius: 6,
               border: "none",
-              background: "#1B3A5C",
-              color: "#FFFFFF",
+              background: "#B88932",
+              color: "#171715",
               fontSize: 15,
               fontWeight: 500,
               cursor: "pointer",
@@ -62,7 +62,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
             Try again
           </button>
           {error.digest && (
-            <p style={{ margin: "1rem 0 0", fontSize: 13, color: "#6B6B63" }}>
+            <p style={{ margin: "1rem 0 0", fontSize: 13, color: "#6F6B62" }}>
               Reference <span style={{ fontFamily: "ui-monospace, monospace" }}>{error.digest}</span>
             </p>
           )}

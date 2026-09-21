@@ -58,7 +58,7 @@ decorated. **Audience:** business owners, bookkeepers, and finance teams
 managing real money — not consumer/prosumer, not playful.
 
 **Dominant language:** light-first, warm-neutral "paper" surfaces with a
-single restrained navy accent; hairline borders instead of shadows as the
+single restrained gold accent (Graphite + Gold, §3); hairline borders instead of shadows as the
 primary way surfaces separate from each other (grounded in Ramp's
 `1px solid rgba(33,33,33,0.1)` card treatment); tight negative letter-spacing
 on large type (a pattern present, at different intensities, on all four
@@ -69,7 +69,7 @@ but which is non-negotiable for an accounting product.
 ### Key Characteristics
 - Warm off-white "paper" background, never pure `#FFFFFF` or pure `#000000`
 - Hairline 1px borders as the default separator; shadows reserved for truly floating layers (dropdowns, modals, toasts)
-- One accent color (deep statement navy), used sparingly and never as a gradient
+- One accent color (gold), used sparingly as a precision detail and never as a gradient or glow
 - Financial figures always in tabular monospace, right-aligned
 - Sidebar-driven app shell (not top-nav-only) once inside the product
 - Status communicated by icon + text + color together, never color alone
@@ -80,56 +80,60 @@ but which is non-negotiable for an accounting product.
 
 ## 3. Color Palette
 
-**Philosophy.** A warm-neutral ink/paper base (not cold gray, not pure
-black/white) carries almost the entire UI. A single accent — a deep,
-desaturated navy, not a bright SaaS blue or purple — is reserved for primary
-actions, links, and focus. Financial meaning (positive/negative/warning) is
-carried by dedicated semantic hues that are deliberately *not* the same hue
-as the brand accent, so a user never has to wonder "is this colored number a
-link, or is it a dollar amount?"
+**Revision (2026-09-21): Graphite + Gold.** The palette was replaced
+wholesale — structure, type, spacing and motion unchanged. The token names
+below are the same ones the code has always used; only their values moved.
 
-### Neutrals (paper/ink ramp)
-| Token | Hex | Role |
-|---|---|---|
-| `--color-paper` | `#FAFAF8` | Page background |
-| `--color-surface` | `#FFFFFF` | Card / panel / raised surface |
-| `--color-surface-sunken` | `#F3F2EE` | Table stripe, input fill, recessed areas |
-| `--color-border-subtle` | `#E7E5DF` | Default hairline dividers, card borders |
-| `--color-border` | `#D8D5CC` | Input borders, table borders |
-| `--color-border-strong` | `#B9B4A8` | Hover/active borders |
-| `--color-text-tertiary` | `#8A8577` | Placeholder, disabled, meta timestamps |
-| `--color-text-secondary` | `#5C594E` | Labels, captions, secondary body text |
-| `--color-text-primary` | `#201F1B` | Body text, default ink |
-| `--color-ink` | `#14130F` | Headings, highest-emphasis text |
+**Philosophy.** A warm-neutral base (graphite in dark mode, ledger paper in
+light — never cold gray, never pure black/white) carries almost the entire
+UI. A single accent — **gold** — is a precision detail, not a surface:
+primary actions, active navigation, selected and focus states, key links,
+small financial/AI highlights. Never a background larger than a button or
+badge, never a glow, never a gradient. Financial meaning (positive /
+negative / warning) keeps dedicated semantic hues that are deliberately
+*not* gold, so a user never has to wonder "is this colored number a link,
+or is it a dollar amount?"
 
-*Grounded in spirit, not value:* Apple's body text is `rgb(29,29,31)` — a
-near-black that reads warmer than pure black *(grounded)*. Countorra's
-`--color-ink` follows the same principle at a slightly warmer, ledger-paper
-temperature rather than Apple's cool gray-black.
+### Neutrals
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| `--color-paper` | `#F5F2EA` | `#0C0C0B` | Page background |
+| `--color-surface` | `#FAF8F2` | `#191917` | Card / panel / raised surface / input fill |
+| `--color-surface-sunken` | `#EEEAE0` | `#22221F` | Section bands (at 40%), recessed areas, hover fill |
+| `--color-border-subtle` | `#D8D3C8` | `#2A2925` | Default hairline dividers, card borders |
+| `--color-border` | `#CBC5B8` | `#36342F` | Input borders, table borders |
+| `--color-border-strong` | `#ABA496` | `#4A4841` | Hover/active borders |
+| `--color-text-tertiary` | `#857F73` | `#7C7970` | Placeholder, disabled, meta timestamps |
+| `--color-text-secondary` | `#6F6B62` | `#A6A39A` | Labels, captions, secondary body text |
+| `--color-text-primary` | `#171715` | `#F5F2EA` | Body text, default ink |
+| `--color-ink` | `#0C0C0B` | `#FAF8F2` | Headings, highest-emphasis text |
 
-### Accent — "Statement Navy"
-| Token | Hex | Role |
-|---|---|---|
-| `--color-accent` | `#1B3A5C` | Primary CTA, links, active nav, focus ring |
-| `--color-accent-hover` | `#14304C` | Hover/pressed state |
-| `--color-accent-subtle` | `#E9EEF3` | Selected rows, info banners, active nav background |
-| `--color-accent-contrast` | `#FFFFFF` | Text/icons on accent fill |
+### Accent — Gold
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| `--color-gold` | `#B88932` | `#D6A84F` | FILL: primary buttons, active indicators, checked states |
+| `--color-gold-hover` | `#9F7428` | `#E4BB67` | Fill hover |
+| `--color-accent` | `#8A6420` | `#D6A84F` | TEXT, borders, focus rings: links, active labels |
+| `--color-accent-hover` | `#6E4F17` | `#E4BB67` | Text/border hover |
+| `--color-accent-subtle` | `#F1E6CC` | `rgba(214,168,79,0.12)` | Selected rows, active backgrounds |
+| `--color-accent-contrast` | `#171715` | `#0C0C0B` | Text/icons on a gold fill |
 
-Deliberately **not** Stripe's blurple (`rgb(83,58,253)`, *grounded*) and not
-a bright indigo/purple — those read as "AI SaaS" by 2026. Navy reads as
-banking/finance without a gradient in sight.
+Why two gold tokens in light mode: `#B88932` on paper is ~2.6:1 — right for
+a button fill carrying graphite text (~6.6:1), wrong for gold *text*, which
+needs 4.5:1. `--color-accent` is the deeper `#8A6420` (~4.7:1) for text,
+borders and focus. In dark mode both are the brand `#D6A84F` (~8.9:1).
 
 ### Semantic (financial meaning — independent of accent hue)
-| Token | Hex | Role |
-|---|---|---|
-| `--color-positive` | `#1A7F5A` | Income, gains, positive deltas, "paid" status |
-| `--color-positive-subtle` | `#E4F1EB` | Positive-value cell/badge background |
-| `--color-negative` | `#B3261E` | Expenses, losses, destructive actions, "overdue" |
-| `--color-negative-subtle` | `#FBEAE9` | Negative-value cell/badge background |
-| `--color-warning` | `#A15C07` | Warnings, "draft"/"pending" status |
-| `--color-warning-subtle` | `#FBF0DE` | Warning badge background |
-| `--color-info` | `#1B3A5C` | Informational (reuses accent) |
-| `--color-info-subtle` | `#E9EEF3` | Info banner background |
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| `--color-positive` | `#3B7550` | `#6FAF82` | Income, gains, positive deltas, "paid" status |
+| `--color-negative` | `#B04A3F` | `#D66A5F` | Expenses, losses, destructive actions, "overdue" |
+| `--color-warning` | `#9A5B1E` | `#D98E4A` | Warnings, "draft"/"pending" — amber, kept clear of gold |
+| `--color-info` | `#5E6470` | `#9AA0AA` | Informational — a quiet slate, no blue |
+
+Each has a `-subtle` badge/cell background (light: solid tints; dark: the
+hue at 14% opacity). Charts use `--color-chart-1…6`: gold, green, amber,
+terracotta, warm gray, slate — distinguishable in both modes.
 
 ### Notes
 Accent is used only for primary CTAs, links, active/selected states, and
@@ -337,8 +341,8 @@ text uses `--color-text-tertiary`.
 
 **Focus:** border becomes `1px solid --color-accent` plus a `2px` outer ring
 in `--color-accent` at 20% opacity, `2px` offset — a calmer descendant of
-Apple's dedicated focus color (`#0071E3`, *grounded*) adapted to Statement
-Navy. Focus is always visible; `outline: none` without a replacement ring is
+Apple's dedicated focus color (`#0071E3`, *grounded*) adapted to the
+gold (`--color-accent`). Focus is always visible; `outline: none` without a replacement ring is
 never acceptable (see [24. Accessibility](#24-accessibility)).
 
 **Error state:** border `--color-negative`, helper text below in
@@ -408,9 +412,9 @@ padding drops to `space-2`. Empty table state follows
 ## 12. Charts and Financial Data Visualization
 
 A dedicated categorical palette, distinct from UI accent/semantic tokens so
-charts never get mistaken for status indicators: `#1B3A5C` (navy),
-`#1A7F5A` (green), `#A15C07` (amber), `#8C4B3A` (terracotta), `#5C594E`
-(slate), `#6B4C63` (muted mauve) — six muted, desaturated hues that hold up
+charts never get mistaken for status indicators: gold, green, amber,
+terracotta, warm gray and slate (`--color-chart-1…6`; light and dark values
+in §3) — six muted, desaturated hues that hold up
 in small multiples and stay legible in dark mode.
 
 **Line/area charts** (cash flow, revenue trend): `1.5px` stroke, no
@@ -767,24 +771,12 @@ product decision that a financial-infrastructure brand should read as
 genuinely black, not dark gray, with depth coming from typography,
 spacing, and hairline borders rather than a lifted page background.
 
-| Token | Light | Dark |
-|---|---|---|
-| `--color-paper` | `#FAFAF8` | `#0A0A0A` |
-| `--color-surface` | `#FFFFFF` | `#131313` |
-| `--color-surface-sunken` | `#F3F2EE` | `#1C1C1C` |
-| `--color-border-subtle` | `#E7E5DF` | `rgba(255,255,255,0.07)` |
-| `--color-border` | `#D8D5CC` | `rgba(255,255,255,0.13)` |
-| `--color-text-tertiary` | `#8A8577` | `#87837B` |
-| `--color-text-secondary` | `#5C594E` | `#B6B2A9` |
-| `--color-text-primary` | `#201F1B` | `#EDEBE7` |
-| `--color-ink` | `#14130F` | `#FAFAF8` |
-| `--color-accent` | `#1B3A5C` | `#5A87B5` |
-| `--color-accent-subtle` | `#E9EEF3` | `rgba(90,135,181,0.14)` |
-| `--color-positive` | `#1A7F5A` | `#4FB98A` |
-| `--color-negative` | `#B3261E` | `#E5847D` |
-| `--color-warning` | `#A15C07` | `#D99A45` |
+**Revision (2026-09-21):** Graphite + Gold. Dark mode is the brand's
+primary expression — graphite `#0C0C0B` with gold `#D6A84F` — and light
+mode is its warm-paper counterpart. Both follow the operating system, as
+before. Full values in [3. Color Palette](#3-color-palette).
 
-Dark surfaces stay near `#0A0A0A`–`#1C1C1C` — deliberately not literal
+Dark surfaces stay near `#0C0C0B`–`#22221F` — deliberately not literal
 `#000000` (a truly zero-luminance fill crushes hairline borders and
 prevents any surface from reading as "lifted" above it), but close enough
 that the page reads as black at a glance. Depth between paper, surface,
@@ -793,8 +785,8 @@ gray-on-gray range the earlier palette used — hierarchy is carried by
 that subtle lift plus hairline borders and typography, not by a visibly
 gray page background. Accent and semantic hues are lightened and
 slightly desaturated in dark mode to hold AA contrast against dark
-surfaces without turning neon — contrast against the darker `#0A0A0A`
-paper is stronger than before, not weaker. Shadows in dark mode use
+surfaces without turning neon — contrast against the `#0C0C0B` graphite
+paper holds AA throughout. Shadows in dark mode use
 higher opacity, lower blur (`rgba(0,0,0,0.4)` at Level 2/3) since ambient
 dark-surface shadows read poorly with the light-mode blur values. Charts
 reuse the same six categorical hues at the dark-mode-adjusted lightness
@@ -839,17 +831,19 @@ financial product rather than a marketing-led landing page.
 
 ### Quick Token Reference
 ```text
-#FAFAF8  // paper (page background)
-#FFFFFF  // surface (cards, panels)
-#F3F2EE  // surface-sunken (stripes, recessed fields)
-#E7E5DF  // border-subtle
-#D8D5CC  // border
-#201F1B  // text-primary / ink
-#8A8577  // text-tertiary
-#1B3A5C  // accent — Statement Navy (CTAs, links, focus)
-#1A7F5A  // positive (income, "paid")
-#B3261E  // negative (expense, "overdue", destructive)
-#A15C07  // warning ("draft"/"pending")
+            light     dark
+paper       #F5F2EA   #0C0C0B   // page background
+surface     #FAF8F2   #191917   // cards, panels, inputs
+sunken      #EEEAE0   #22221F   // bands, recessed, hover fill
+border      #D8D3C8   #2A2925   // hairlines (border-subtle)
+text        #171715   #F5F2EA   // text-primary
+muted       #6F6B62   #A6A39A   // text-secondary
+gold        #B88932   #D6A84F   // fills: primary buttons, active bars
+gold hover  #9F7428   #E4BB67
+accent      #8A6420   #D6A84F   // gold for text, borders, focus
+positive    #3B7550   #6FAF82
+negative    #B04A3F   #D66A5F
+warning     #9A5B1E   #D98E4A
 ```
 
 ### CSS Custom Properties
@@ -889,9 +883,10 @@ Geist Mono financial figures.
 7. The screen would not be mistaken for a generic AI SaaS template — if in doubt, re-read §1.
 
 ### Iteration Guide
-- To adjust the accent without breaking the system: rotate hue within
-  ±15° of navy (`#1B3A5C`) and keep saturation under 35% — stray further
-  and it starts reading as "AI blue" again.
+- To adjust the accent without breaking the system: stay within a few
+  degrees of gold (`#D6A84F`) and keep it a detail — gold on a large
+  surface, in a gradient or as a glow reads as crypto/gaming, not finance.
+  Light-mode gold used as text must keep 4.5:1 on paper (`--color-accent`).
 - Semantic hues (positive/negative/warning) are fixed by financial
   convention — do not repurpose them for anything non-financial (e.g.
   don't use `--color-positive` green as a generic "success" toast color

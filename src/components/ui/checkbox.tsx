@@ -11,7 +11,7 @@ export const Checkbox = React.forwardRef<
     ref={ref}
     className={cn(
       "flex size-4 items-center justify-center rounded-[4px] border border-border bg-surface",
-      "data-[state=checked]:border-accent data-[state=checked]:bg-accent",
+      "data-[state=checked]:border-gold data-[state=checked]:bg-gold",
       "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
       "transition-colors duration-100 ease-out",
       className,

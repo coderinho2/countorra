@@ -41,7 +41,7 @@ export function NavLink({ item, orgId, pathname }: { item: NavItem; orgId: strin
       <span
         aria-hidden="true"
         className={cn(
-          "bg-accent absolute top-1 bottom-1 left-0 w-0.5 origin-center rounded-full",
+          "bg-gold absolute top-1 bottom-1 left-0 w-0.5 origin-center rounded-full",
           "transition-transform duration-[var(--duration-panel)] ease-[var(--ease-emphasized)]",
           active ? "scale-y-100" : "scale-y-0",
         )}

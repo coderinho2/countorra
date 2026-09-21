@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
  */
 
 const VARIANT_CLASSES = {
-  primary: "bg-accent text-accent-contrast hover:bg-accent-hover",
-  secondary: "border border-border bg-transparent text-text-primary hover:bg-surface-sunken",
+  primary: "bg-gold text-accent-contrast hover:bg-gold-hover",
+  secondary: "border border-border bg-surface text-text-primary hover:border-border-strong hover:bg-surface-sunken",
   ghost: "bg-transparent text-text-primary hover:bg-surface-sunken",
   destructive: "border border-negative/40 bg-transparent text-negative hover:bg-negative-subtle",
   "destructive-solid": "bg-negative text-white hover:brightness-95",

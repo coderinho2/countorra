@@ -192,7 +192,7 @@ export default async function PricingPage() {
                     plan.recommended ? "border-border bg-surface" : "bg-surface-sunken/40",
                   )}
                 >
-                  {plan.recommended && <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-accent" />}
+                  {plan.recommended && <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-gold" />}
                   <div className="flex flex-col gap-3">
                     <div className="flex h-4 items-center">
                       {plan.recommended && (

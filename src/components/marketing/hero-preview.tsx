@@ -233,7 +233,7 @@ export function HeroPreview() {
                       active ? "bg-accent-subtle text-accent" : "text-text-secondary",
                     )}
                   >
-                    {active && <span className="absolute top-1 bottom-1 left-0 w-0.5 rounded-full bg-accent" />}
+                    {active && <span className="absolute top-1 bottom-1 left-0 w-0.5 rounded-full bg-gold" />}
                     <Icon size={15} weight={active ? "fill" : "regular"} />
                     {item.label}
                   </div>

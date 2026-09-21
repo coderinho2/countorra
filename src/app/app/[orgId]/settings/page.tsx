@@ -196,7 +196,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ orgId
                   </span>
                 </div>
                 <span aria-hidden="true" className="h-1 w-full overflow-hidden rounded-pill bg-surface-sunken">
-                  <span className={cn("block h-full rounded-pill", usageShare >= 90 ? "bg-warning" : "bg-accent")} style={{ width: `${usageShare}%` }} />
+                  <span className={cn("block h-full rounded-pill", usageShare >= 90 ? "bg-warning" : "bg-gold")} style={{ width: `${usageShare}%` }} />
                 </span>
                 <p className="text-[13px] text-text-tertiary">
                   {`${entitlements.name} includes ${formatAiMessageLimit(planTier)} of AI messages. Compare what each plan includes on `}

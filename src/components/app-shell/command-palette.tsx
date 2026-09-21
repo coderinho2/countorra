@@ -143,7 +143,7 @@ export function CommandPalette({ organizationId, entityType }: { organizationId:
                 placeholder="Search transactions, documents..."
                 className="text-text-primary placeholder:text-text-tertiary h-12 w-full bg-transparent text-[15px] outline-none"
               />
-              {isPending && <span aria-hidden="true" className="ai-thinking-dot bg-accent size-1.5 shrink-0 rounded-full" />}
+              {isPending && <span aria-hidden="true" className="ai-thinking-dot bg-gold size-1.5 shrink-0 rounded-full" />}
             </div>
 
             <Command.List className="max-h-[min(24rem,50vh)] overflow-y-auto p-1.5">

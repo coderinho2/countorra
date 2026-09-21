@@ -46,7 +46,7 @@ function DrawerLink({ item, orgId, pathname, onNavigate }: { item: NavItem; orgI
         active ? "bg-accent-subtle text-accent" : "text-text-primary active:bg-surface-sunken",
       )}
     >
-      {active && <span aria-hidden="true" className="bg-accent absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full" />}
+      {active && <span aria-hidden="true" className="bg-gold absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full" />}
       <Icon size={20} weight={active ? "fill" : "regular"} />
       {item.label}
     </Link>

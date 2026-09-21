@@ -173,7 +173,7 @@ export function DropdownNavigation({
                       horizontal bar so it lands on the header's own hairline. */}
                   <span
                     aria-hidden="true"
-                    className={cn("bg-accent absolute inset-x-0 bottom-0 h-0.5", active ? "opacity-100" : "opacity-0")}
+                    className={cn("bg-gold absolute inset-x-0 bottom-0 h-0.5", active ? "opacity-100" : "opacity-0")}
                   />
                 </Link>
               </li>

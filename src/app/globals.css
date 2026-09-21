@@ -12,41 +12,49 @@
  */
 
 :root {
-  /* Neutrals — paper/ink ramp (DESIGN.md §3) */
-  --color-paper: #fafaf8;
-  --color-surface: #ffffff;
-  --color-surface-sunken: #f3f2ee;
-  --color-border-subtle: #e7e5df;
-  --color-border: #d8d5cc;
-  --color-border-strong: #b9b4a8;
-  --color-text-tertiary: #8a8577;
-  --color-text-secondary: #5c594e;
-  --color-text-primary: #201f1b;
-  --color-ink: #14130f;
+  /* Neutrals — Graphite + Gold, light: warm paper and ledger (DESIGN.md §3) */
+  --color-paper: #f5f2ea;
+  --color-surface: #faf8f2;
+  --color-surface-sunken: #eeeae0;
+  --color-border-subtle: #d8d3c8;
+  --color-border: #cbc5b8;
+  --color-border-strong: #aba496;
+  --color-text-tertiary: #857f73;
+  --color-text-secondary: #6f6b62;
+  --color-text-primary: #171715;
+  --color-ink: #0c0c0b;
 
-  /* Accent — Statement Navy */
-  --color-accent: #1b3a5c;
-  --color-accent-hover: #14304c;
-  --color-accent-subtle: #e9eef3;
-  --color-accent-contrast: #ffffff;
+  /* Accent — Gold.
+     `accent` is what TEXT, borders, outlines and focus rings are drawn in,
+     so in light mode it is a deeper gold: #b88932 on paper is ~2.6:1, below
+     the 4.5:1 text needs; #8a6420 is ~4.7:1. `gold` is the FILL — primary
+     buttons, active indicators, checked states — at the brand value, with
+     graphite text on it (`accent-contrast`, ~6.6:1). */
+  --color-accent: #8a6420;
+  --color-accent-hover: #6e4f17;
+  --color-accent-subtle: #f1e6cc;
+  --color-accent-contrast: #171715;
+  --color-gold: #b88932;
+  --color-gold-hover: #9f7428;
 
-  /* Semantic — financial meaning, independent of accent hue */
-  --color-positive: #1a7f5a;
-  --color-positive-subtle: #e4f1eb;
-  --color-negative: #b3261e;
-  --color-negative-subtle: #fbeae9;
-  --color-warning: #a15c07;
-  --color-warning-subtle: #fbf0de;
-  --color-info: #1b3a5c;
-  --color-info-subtle: #e9eef3;
+  /* Semantic — financial meaning, independent of accent hue. Deepened from
+     the dark-mode values so each reads at AA on paper. */
+  --color-positive: #3b7550;
+  --color-positive-subtle: #e3ede3;
+  --color-negative: #b04a3f;
+  --color-negative-subtle: #f6e3df;
+  --color-warning: #9a5b1e;
+  --color-warning-subtle: #f4e6d4;
+  --color-info: #5e6470;
+  --color-info-subtle: #e8e7e3;
 
   /* Data visualization — categorical palette (DESIGN.md §12), distinct from UI tokens */
-  --color-chart-1: #1b3a5c;
-  --color-chart-2: #1a7f5a;
-  --color-chart-3: #a15c07;
+  --color-chart-1: #b88932;
+  --color-chart-2: #3b7550;
+  --color-chart-3: #9a5b1e;
   --color-chart-4: #8c4b3a;
-  --color-chart-5: #5c594e;
-  --color-chart-6: #6b4c63;
+  --color-chart-5: #6f6b62;
+  --color-chart-6: #5e6470;
 
   /* Radius scale (DESIGN.md §6) */
   --radius-sm: 6px;
@@ -55,8 +63,8 @@
   --radius-pill: 999px;
 
   /* Elevation (DESIGN.md §21) — border-first; shadow only for floating layers */
-  --shadow-level-2: 0 4px 16px rgba(20, 19, 15, 0.08);
-  --shadow-level-3: 0 16px 40px rgba(20, 19, 15, 0.14);
+  --shadow-level-2: 0 4px 16px rgba(23, 23, 21, 0.08);
+  --shadow-level-3: 0 16px 40px rgba(23, 23, 21, 0.14);
 
   /* Motion (DESIGN.md §22).
      Three curves, three duration tiers, used everywhere. Nothing in the
@@ -93,30 +101,39 @@
    over the automatic prefers-color-scheme response below. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-paper: #0a0a0a;
-    --color-surface: #131313;
-    --color-surface-sunken: #1c1c1c;
-    --color-border-subtle: rgba(255, 255, 255, 0.07);
-    --color-border: rgba(255, 255, 255, 0.13);
-    --color-border-strong: rgba(255, 255, 255, 0.24);
-    --color-text-tertiary: #87837b;
-    --color-text-secondary: #b6b2a9;
-    --color-text-primary: #edebe7;
-    --color-ink: #fafaf8;
+    --color-paper: #0c0c0b;
+    --color-surface: #191917;
+    --color-surface-sunken: #22221f;
+    --color-border-subtle: #2a2925;
+    --color-border: #36342f;
+    --color-border-strong: #4a4841;
+    --color-text-tertiary: #7c7970;
+    --color-text-secondary: #a6a39a;
+    --color-text-primary: #f5f2ea;
+    --color-ink: #faf8f2;
 
-    --color-accent: #5a87b5;
-    --color-accent-hover: #729bc4;
-    --color-accent-subtle: rgba(90, 135, 181, 0.14);
-    --color-accent-contrast: #0c1720;
+    --color-accent: #d6a84f;
+    --color-accent-hover: #e4bb67;
+    --color-accent-subtle: rgba(214, 168, 79, 0.12);
+    --color-accent-contrast: #0c0c0b;
+    --color-gold: #d6a84f;
+    --color-gold-hover: #e4bb67;
 
-    --color-positive: #4fb98a;
-    --color-positive-subtle: rgba(79, 185, 138, 0.14);
-    --color-negative: #e5847d;
-    --color-negative-subtle: rgba(229, 132, 125, 0.14);
-    --color-warning: #d99a45;
-    --color-warning-subtle: rgba(217, 154, 69, 0.14);
-    --color-info: #5a87b5;
-    --color-info-subtle: rgba(90, 135, 181, 0.14);
+    --color-positive: #6faf82;
+    --color-positive-subtle: rgba(111, 175, 130, 0.14);
+    --color-negative: #d66a5f;
+    --color-negative-subtle: rgba(214, 106, 95, 0.14);
+    --color-warning: #d98e4a;
+    --color-warning-subtle: rgba(217, 142, 74, 0.14);
+    --color-info: #9aa0aa;
+    --color-info-subtle: rgba(154, 160, 170, 0.14);
+
+    --color-chart-1: #d6a84f;
+    --color-chart-2: #6faf82;
+    --color-chart-3: #d98e4a;
+    --color-chart-4: #c07a68;
+    --color-chart-5: #a6a39a;
+    --color-chart-6: #8e95a0;
 
     --shadow-level-2: 0 4px 16px rgba(0, 0, 0, 0.4);
     --shadow-level-3: 0 16px 40px rgba(0, 0, 0, 0.5);
@@ -124,30 +141,39 @@
 }
 
 :root[data-theme="dark"] {
-  --color-paper: #0a0a0a;
-  --color-surface: #131313;
-  --color-surface-sunken: #1c1c1c;
-  --color-border-subtle: rgba(255, 255, 255, 0.07);
-  --color-border: rgba(255, 255, 255, 0.13);
-  --color-border-strong: rgba(255, 255, 255, 0.24);
-  --color-text-tertiary: #87837b;
-  --color-text-secondary: #b6b2a9;
-  --color-text-primary: #edebe7;
-  --color-ink: #fafaf8;
+  --color-paper: #0c0c0b;
+  --color-surface: #191917;
+  --color-surface-sunken: #22221f;
+  --color-border-subtle: #2a2925;
+  --color-border: #36342f;
+  --color-border-strong: #4a4841;
+  --color-text-tertiary: #7c7970;
+  --color-text-secondary: #a6a39a;
+  --color-text-primary: #f5f2ea;
+  --color-ink: #faf8f2;
 
-  --color-accent: #5a87b5;
-  --color-accent-hover: #729bc4;
-  --color-accent-subtle: rgba(90, 135, 181, 0.14);
-  --color-accent-contrast: #0c1720;
+  --color-accent: #d6a84f;
+  --color-accent-hover: #e4bb67;
+  --color-accent-subtle: rgba(214, 168, 79, 0.12);
+  --color-accent-contrast: #0c0c0b;
+  --color-gold: #d6a84f;
+  --color-gold-hover: #e4bb67;
 
-  --color-positive: #4fb98a;
-  --color-positive-subtle: rgba(79, 185, 138, 0.14);
-  --color-negative: #e5847d;
-  --color-negative-subtle: rgba(229, 132, 125, 0.14);
-  --color-warning: #d99a45;
-  --color-warning-subtle: rgba(217, 154, 69, 0.14);
-  --color-info: #5a87b5;
-  --color-info-subtle: rgba(90, 135, 181, 0.14);
+  --color-positive: #6faf82;
+  --color-positive-subtle: rgba(111, 175, 130, 0.14);
+  --color-negative: #d66a5f;
+  --color-negative-subtle: rgba(214, 106, 95, 0.14);
+  --color-warning: #d98e4a;
+  --color-warning-subtle: rgba(217, 142, 74, 0.14);
+  --color-info: #9aa0aa;
+  --color-info-subtle: rgba(154, 160, 170, 0.14);
+
+  --color-chart-1: #d6a84f;
+  --color-chart-2: #6faf82;
+  --color-chart-3: #d98e4a;
+  --color-chart-4: #c07a68;
+  --color-chart-5: #a6a39a;
+  --color-chart-6: #8e95a0;
 
   --shadow-level-2: 0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-level-3: 0 16px 40px rgba(0, 0, 0, 0.5);
@@ -169,6 +195,8 @@
   --color-accent-hover: var(--color-accent-hover);
   --color-accent-subtle: var(--color-accent-subtle);
   --color-accent-contrast: var(--color-accent-contrast);
+  --color-gold: var(--color-gold);
+  --color-gold-hover: var(--color-gold-hover);
 
   --color-positive: var(--color-positive);
   --color-positive-subtle: var(--color-positive-subtle);

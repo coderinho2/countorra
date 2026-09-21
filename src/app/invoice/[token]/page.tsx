@@ -169,7 +169,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
         {invoice.payment_url && state !== "paid" && state !== "void" && (
           <a
             href={invoice.payment_url}
-            className="mt-8 inline-flex h-10 items-center justify-center rounded-md bg-accent px-5 text-[14px] font-medium text-white transition-colors duration-[var(--duration-fast)] ease-out hover:bg-accent-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="mt-8 inline-flex h-10 items-center justify-center rounded-md bg-gold px-5 text-[14px] font-medium text-accent-contrast transition-colors duration-[var(--duration-fast)] ease-out hover:bg-gold-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             Pay invoice
           </a>
