@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/app-shell/sidebar";
 import { Topbar } from "@/components/app-shell/topbar";
 import { ViewTransition } from "@/components/app-shell/view-transition";
 import { ContextBar } from "@/components/app-shell/context-bar";
+import { productEntityType } from "@/domain/organizations/launch-scope";
 
 /**
  * Every route under /app/[orgId]/* is authorized here, once, via
@@ -30,6 +31,11 @@ export default async function OrganizationLayout({ children, params }: { childre
   // membership is enforced by the database, not by this query.
   const [notifications, organizations] = await Promise.all([listNotifications(client, orgId, user.id, { limit: 20 }), listMyOrganizations(client)]);
 
+  // Personal only at launch: every workspace — including one stored as
+  // freelancer or business before the launch scope narrowed — is shown and
+  // navigated as personal (src/domain/organizations/launch-scope.ts).
+  const entityType = productEntityType(organization.entityType);
+
   return (
     // A real application frame: the shell is exactly the viewport tall and
     // only the content area scrolls. Previously the whole document scrolled,
@@ -44,23 +50,23 @@ export default async function OrganizationLayout({ children, params }: { childre
     <div className="flex h-dvh w-full overflow-hidden">
       <Sidebar
         orgId={orgId}
-        entityType={organization.entityType}
+        entityType={entityType}
         organization={{
           id: organization.id,
           name: organization.name,
-          entityType: organization.entityType,
+          entityType,
         }}
         organizations={organizations.map((o) => ({
           id: o.id,
           name: o.name,
-          entityType: o.entityType,
+          entityType: productEntityType(o.entityType),
         }))}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Topbar
           orgId={orgId}
           orgName={organization.name}
-          entityType={organization.entityType}
+          entityType={entityType}
           userEmail={user.email ?? ""}
           notifications={notifications}
         />
@@ -69,7 +75,7 @@ export default async function OrganizationLayout({ children, params }: { childre
             below it without competing with navigation above it. */}
         <ContextBar
           workspace={organization.name}
-          entity={organization.entityType}
+          entity={entityType}
           currency={organization.baseCurrency}
           asOf={new Date().toISOString().slice(0, 10)}
         />

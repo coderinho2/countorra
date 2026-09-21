@@ -19,6 +19,7 @@ import { money, subtract, zero, type Money } from "@/domain/money/money";
 import { isSupportedCurrency } from "@/domain/money/currency";
 import { cn } from "@/lib/utils";
 import { healthLabel } from "@/domain/insights/financial-health";
+import { isModuleEnabled } from "@/domain/organizations/launch-scope";
 
 /** DB currency columns are plain `text`, not the narrowed `CurrencyCode`
  *  union — this is the one place that boundary gets checked before handing a
@@ -103,16 +104,14 @@ export default async function DashboardPage({ params }: { params: Promise<{ orgI
   if (!organization) notFound();
 
   const data = await getDashboardData(client, organization);
-  const isPersonal = organization.entityType === "personal";
-
-  const heroLabel = isPersonal ? "Available balance" : organization.entityType === "freelancer" ? "Estimated profit this month" : "Cash position";
-  const heroValue = organization.entityType === "freelancer" ? data.thisMonth.profit : data.totalBalance;
 
   const netByMonth = data.monthlyTotals.map((m) => subtract(m.income, m.expense).amountMinor);
   const netTrend = netByMonth.length > 1 ? netByMonth[netByMonth.length - 1] - netByMonth[0] : 0;
 
   const nowMs = new Date().getTime();
-  const overdue = data.overdueInvoices.slice(0, 4);
+  // Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts):
+  // an overdue invoice from before would link to a page that is switched off.
+  const overdue = isModuleEnabled("invoicing") ? data.overdueInvoices.slice(0, 4) : [];
   const attentionCount = overdue.length + data.insights.length;
 
   // Section numbers must stay contiguous when a section is absent — an
@@ -134,10 +133,10 @@ export default async function DashboardPage({ params }: { params: Promise<{ orgI
 
         <div className="grid grid-cols-1 items-end gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-16">
           <div className="flex flex-col gap-2">
-            <span className="text-text-secondary text-[13px]">{heroLabel}</span>
-            <Amount value={heroValue} size="hero" tone="ink" />
+            <span className="text-text-secondary text-[13px]">Available balance</span>
+            <Amount value={data.totalBalance} size="hero" tone="ink" />
             <span className="text-text-tertiary text-[13px]">
-              {isPersonal ? "Across" : "Held across"} {data.accountCount} {data.accountCount === 1 ? "account" : "accounts"}
+              Across {data.accountCount} {data.accountCount === 1 ? "account" : "accounts"}
             </span>
           </div>
 
@@ -154,11 +153,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ orgI
         </div>
 
         <dl
-          className={cn(
-            "border-border-subtle grid grid-cols-2 gap-x-6 gap-y-6 border-t pt-6",
-            isPersonal ? "sm:grid-cols-2" : "sm:grid-cols-3",
-            "sm:divide-border-subtle sm:gap-x-0 sm:divide-x",
-          )}
+          className="border-border-subtle sm:divide-border-subtle grid grid-cols-2 gap-x-6 gap-y-6 border-t pt-6 sm:grid-cols-2 sm:gap-x-0 sm:divide-x"
         >
           <div className="sm:pr-10">
             <Metric label="Income this month" value={data.thisMonth.income} changePercent={data.comparisonVsLastMonth.incomePercentChange} />
@@ -171,11 +166,6 @@ export default async function DashboardPage({ params }: { params: Promise<{ orgI
               favourableDirection="down"
             />
           </div>
-          {!isPersonal && (
-            <div className="sm:px-10">
-              <Metric label="Profit this month" value={data.thisMonth.profit} />
-            </div>
-          )}
         </dl>
       </section>
 

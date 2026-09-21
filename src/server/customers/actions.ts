@@ -1,5 +1,6 @@
 "use server";
 
+import { DEFERRED_MODULE_MESSAGE, isModuleEnabled } from "@/domain/organizations/launch-scope";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/server/supabase/server";
 import { requireOrgMembership } from "@/server/auth/session";
@@ -22,6 +23,8 @@ export interface CustomerActionResult {
 }
 
 export async function createCustomerAction(_prev: CustomerActionResult, formData: FormData): Promise<CustomerActionResult> {
+  // Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts).
+  if (!isModuleEnabled("invoicing")) return { error: DEFERRED_MODULE_MESSAGE };
   const parsed = createCustomerSchema.safeParse({
     organizationId: formData.get("organizationId"),
     displayName: formData.get("displayName"),

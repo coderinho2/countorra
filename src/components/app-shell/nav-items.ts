@@ -54,7 +54,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: (id) => `/app/${id}/accounts`, label: "Accounts", icon: Wallet },
       // Directly under Accounts, and separate from it: Accounts are the books,
       // kept by hand; a bank connection only feeds transactions into an
-      // account a person chose. Every entity type — any of them can have a bank.
+      // account a person chose.
       { href: (id) => `/app/${id}/bank-connections`, label: "Bank connections", icon: Bank },
       {
         href: (id) => `/app/${id}/documents`,
@@ -64,34 +64,14 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Billing",
-    items: [
-      {
-        href: (id) => `/app/${id}/invoices`,
-        label: "Invoices",
-        icon: FileText,
-        showFor: ["freelancer", "business"],
-      },
-      {
-        href: (id) => `/app/${id}/customers`,
-        label: "Customers",
-        icon: UsersThree,
-        showFor: ["freelancer", "business"],
-      },
-    ],
-  },
-  {
     label: "Analysis",
     items: [
-      {
-        href: (id) => `/app/${id}/reports`,
-        label: "Reports",
-        icon: ChartBar,
-        showFor: ["freelancer", "business"],
-      },
+      // Income, expenses by category and the net result for any period — as
+      // useful for a household as for a business.
+      { href: (id) => `/app/${id}/reports`, label: "Reports", icon: ChartBar },
       { href: (id) => `/app/${id}/insights`, label: "Insights", icon: Sparkle },
-      // Every entity type: a business owner still has a personal position to
-      // prepare, and the page itself says it does not prepare entity returns.
+      // Personal (individual) tax preparation. The page says it does not
+      // prepare business returns.
       { href: (id) => `/app/${id}/tax-preparation`, label: "Tax preparation", icon: Calculator },
       // The next stage after preparation: readiness, review and finalization.
       // Not e-filing — the page says so before anything else.
@@ -99,6 +79,17 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   { label: "Assistant", items: [AI_NAV_ITEM] },
+];
+
+/**
+ * Invoicing — invoices and customers — built for freelancers and businesses
+ * and deferred at launch (src/domain/organizations/launch-scope.ts). Kept
+ * here, out of NAV_GROUPS, so the entries return unchanged when the module
+ * does; their routes answer 404 while it is deferred.
+ */
+export const DEFERRED_NAV_ITEMS: NavItem[] = [
+  { href: (id) => `/app/${id}/invoices`, label: "Invoices", icon: FileText, showFor: ["freelancer", "business"] },
+  { href: (id) => `/app/${id}/customers`, label: "Customers", icon: UsersThree, showFor: ["freelancer", "business"] },
 ];
 
 /** Flat list of everything visible to this entity type — used by the mobile

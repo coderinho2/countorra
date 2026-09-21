@@ -3,10 +3,13 @@ import type { OrgRole, UserEntityType } from "@/types/database";
 export type { OrgRole, UserEntityType };
 
 /**
- * Product-facing alias for `UserEntityType` — DESIGN brief §6 calls these
- * "user types" (PERSONAL / FREELANCER / BUSINESS); the database column is
- * named `entity_type` because the row it lives on (`organizations`) models
- * a financial entity, not a user. Both names refer to the same three values.
+ * Every value the database's `user_entity_type` enum can hold — the column is
+ * named `entity_type` because the row it lives on (`organizations`) models a
+ * financial entity, not a user.
+ *
+ * This is the STORAGE model, not the product: at launch only `personal` can be
+ * created or selected. See ./launch-scope.ts, and use `LAUNCH_ENTITY_TYPES`
+ * wherever a type is offered or accepted.
  */
 export const USER_ENTITY_TYPES: readonly UserEntityType[] = ["personal", "freelancer", "business"];
 

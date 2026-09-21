@@ -25,7 +25,7 @@ const state = vi.hoisted(() => {
     /** Organizations this user OWNS, with the plan each is on. */
     owned: [] as { organizationId: string; planId: string; status: string }[],
     ownershipQueries: [] as { userId: string; role: string }[],
-    created: [] as { name: string }[],
+    created: [] as { name: string; entityType?: string }[],
     subscription: { planId: "free", status: "active" } as { planId: string; status: string } | null,
     messagesUsedToday: 0,
     respondCalls: 0,
@@ -74,11 +74,11 @@ vi.mock("@/server/db/repositories/subscriptions", () => ({
 }));
 
 vi.mock("@/server/db/repositories/organizations", () => ({
-  createOrganization: async (_c: unknown, input: { name: string }) => {
-    state.created.push({ name: input.name });
-    return { id: "99999999-9999-4999-8999-999999999999", name: input.name, entityType: "business", country: "US", baseCurrency: "USD" };
+  createOrganization: async (_c: unknown, input: { name: string; entityType: string }) => {
+    state.created.push({ name: input.name, entityType: input.entityType });
+    return { id: "99999999-9999-4999-8999-999999999999", name: input.name, entityType: "personal", country: "US", baseCurrency: "USD" };
   },
-  getOrganization: async (_c: unknown, id: string) => ({ id, name: "Org", entityType: "business", country: "US", baseCurrency: "USD" }),
+  getOrganization: async (_c: unknown, id: string) => ({ id, name: "Org", entityType: "personal", country: "US", baseCurrency: "USD" }),
   listMyOrganizations: async () => [],
 }));
 
@@ -139,7 +139,7 @@ const { sendAiMessage } = await import("@/server/ai/actions");
 function onboardingForm(name = "New Workspace") {
   const form = new FormData();
   form.set("name", name);
-  form.set("entityType", "business");
+  // Onboarding no longer sends an entity type: every workspace is personal.
   form.set("country", "US");
   form.set("baseCurrency", "USD");
   return form;
@@ -556,3 +556,32 @@ describe("provider cost measurement (Business cost safety)", () => {
     expect(result.content).toBe("ok");
   });
 });
+
+describe("launch scope — personal workspaces only", () => {
+  it("creates a personal workspace when no entity type is sent, as the onboarding form does", async () => {
+    expect((await createOrganization()).error).toBeUndefined();
+    expect(state.created).toEqual([{ name: "New Workspace", entityType: "personal" }]);
+  });
+
+  it("accepts an explicit personal request", async () => {
+    const form = onboardingForm();
+    form.set("entityType", "personal");
+    expect((await createOrganization(form)).error).toBeUndefined();
+    expect(state.created.at(-1)?.entityType).toBe("personal");
+  });
+
+  it.each(["freelancer", "business", "enterprise", ""])("refuses %j and creates nothing", async (entityType) => {
+    const form = onboardingForm();
+    form.set("entityType", entityType);
+    const result = await createOrganization(form);
+    if (entityType === "") {
+      // An empty field is how an unset input arrives; it means "default".
+      expect(result.error).toBeUndefined();
+      expect(state.created.at(-1)?.entityType).toBe("personal");
+      return;
+    }
+    expect(result.error).toBe("Countorra currently supports personal workspaces only.");
+    expect(state.created).toEqual([]);
+  });
+});
+

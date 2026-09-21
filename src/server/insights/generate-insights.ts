@@ -5,6 +5,7 @@ import { createAdminClient } from "@/server/supabase/admin";
 import { listRecentTransactionsForAnalysis } from "@/server/db/repositories/transactions";
 import { listMerchants } from "@/server/db/repositories/merchants";
 import { listInvoices } from "@/server/db/repositories/invoices";
+import { isModuleEnabled } from "@/domain/organizations/launch-scope";
 import { detectRecurringPatterns, type TransactionForRecurrence } from "@/domain/insights/recurring-detection";
 import { detectAnomalies, type TransactionForAnomalyDetection } from "@/domain/insights/anomaly-detection";
 import { isSupportedCurrency, type CurrencyCode } from "@/domain/money/currency";
@@ -50,7 +51,9 @@ export async function generateInsights(client: Client, organizationId: string): 
     // cannot turn insight generation into an unbounded read.
     listRecentTransactionsForAnalysis(client, organizationId, from, today),
     listMerchants(client, organizationId),
-    listInvoices(client, { organizationId, overdueOnly: true, page: 1, pageSize: 100 }),
+    // Overdue-invoice insights only while invoicing is part of the product
+    // (src/domain/organizations/launch-scope.ts).
+    isModuleEnabled("invoicing") ? listInvoices(client, { organizationId, overdueOnly: true, page: 1, pageSize: 100 }) : Promise.resolve({ invoices: [] as Awaited<ReturnType<typeof listInvoices>>["invoices"] }),
   ]);
 
   const merchantNameById = new Map(merchants.map((m) => [m.id, m.name]));

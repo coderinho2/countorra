@@ -97,7 +97,7 @@ export default function AuthSectionThree({
           <h1 className="text-[28px] leading-9 font-semibold tracking-[-0.015em] text-ink sm:text-[32px] sm:leading-10">
             Create your account
           </h1>
-          <p className="text-[15px] text-text-secondary">Financial clarity for your money, your work, or your business.</p>
+          <p className="text-[15px] text-text-secondary">Financial clarity for your money and your taxes.</p>
         </div>
 
         <div className="section-enter flex flex-col gap-5" style={{ "--enter-index": 1 } as React.CSSProperties}>

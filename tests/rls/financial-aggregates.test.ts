@@ -66,9 +66,9 @@ describe("financial aggregates (FIN-01)", () => {
     // Seeding through the real path is also what gives each owner a real
     // membership row for RLS to key on below.
     await db.asUser(OWNER_A);
-    await db.query(`insert into organizations (id, name, entity_type, country, base_currency, created_by) values ($1, 'Org A', 'business', 'US', 'USD', $2)`, [ORG_A, OWNER_A]);
+    await db.query(`insert into organizations (id, name, entity_type, country, base_currency, created_by) values ($1, 'Org A', 'personal', 'US', 'USD', $2)`, [ORG_A, OWNER_A]);
     await db.asUser(OWNER_B);
-    await db.query(`insert into organizations (id, name, entity_type, country, base_currency, created_by) values ($1, 'Org B', 'business', 'US', 'USD', $2)`, [ORG_B, OWNER_B]);
+    await db.query(`insert into organizations (id, name, entity_type, country, base_currency, created_by) values ($1, 'Org B', 'personal', 'US', 'USD', $2)`, [ORG_B, OWNER_B]);
 
     await db.asAdmin(async (query) => {
       await query(`insert into accounts (id, organization_id, name, kind, currency, opening_balance_minor) values ($1, $2, 'Main', 'bank', 'USD', $3)`, [ACCOUNT_A, ORG_A, OPENING]);

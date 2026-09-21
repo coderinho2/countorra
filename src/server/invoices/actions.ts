@@ -1,5 +1,6 @@
 "use server";
 
+import { DEFERRED_MODULE_MESSAGE, isModuleEnabled } from "@/domain/organizations/launch-scope";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/server/supabase/server";
@@ -25,6 +26,8 @@ export interface InvoiceActionResult {
 }
 
 export async function createInvoiceAction(_prev: InvoiceActionResult, formData: FormData): Promise<InvoiceActionResult> {
+  // Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts).
+  if (!isModuleEnabled("invoicing")) return { error: DEFERRED_MODULE_MESSAGE };
   const organizationId = formData.get("organizationId") as string;
   const lineItemsRaw = formData.get("lineItems") as string;
 
@@ -96,6 +99,8 @@ export async function createInvoiceAction(_prev: InvoiceActionResult, formData: 
  * bugs — each is a false statement about whether someone owes money.
  */
 export async function updateInvoiceStatusAction(organizationId: string, invoiceId: string, status: string): Promise<InvoiceActionResult> {
+  // Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts).
+  if (!isModuleEnabled("invoicing")) return { error: DEFERRED_MODULE_MESSAGE };
   // `overdue` is derived from the due date and is deliberately not settable;
   // see src/domain/invoicing/lifecycle.ts.
   if (!isStoredStatus(status)) return { error: "That isn't a status an invoice can be set to." };
@@ -170,6 +175,8 @@ function describeRefusal(from: StoredInvoiceStatus, to: StoredInvoiceStatus): st
  * has to retry, so the transition goes first.
  */
 export async function sendInvoiceAction(organizationId: string, invoiceId: string): Promise<InvoiceActionResult> {
+  // Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts).
+  if (!isModuleEnabled("invoicing")) return { error: DEFERRED_MODULE_MESSAGE };
   const { user, membership } = await requireOrgMembership(organizationId);
   if (!can(membership.role, "financial:write")) return { error: "You don't have permission to send invoices." };
 
@@ -252,6 +259,8 @@ export async function sendInvoiceAction(organizationId: string, invoiceId: strin
 
 /** The customer-facing link, for sharing by hand. */
 export async function getInvoiceShareLinkAction(organizationId: string, invoiceId: string): Promise<{ url?: string; error?: string }> {
+  // Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts).
+  if (!isModuleEnabled("invoicing")) return { error: DEFERRED_MODULE_MESSAGE };
   const { membership } = await requireOrgMembership(organizationId);
   if (!can(membership.role, "financial:read")) return { error: "You don't have permission to view this invoice." };
 

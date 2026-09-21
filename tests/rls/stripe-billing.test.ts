@@ -38,11 +38,11 @@ beforeEach(async () => {
   );
 
   await db.asUser(OWNER);
-  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Acme', 'business', $1) returning id`, [OWNER]);
+  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Acme', 'personal', $1) returning id`, [OWNER]);
   orgId = (org.rows[0] as { id: string }).id;
 
   await db.asUser(OUTSIDER);
-  const other = await db.query(`insert into organizations (name, entity_type, created_by) values ('Other', 'business', $1) returning id`, [OUTSIDER]);
+  const other = await db.query(`insert into organizations (name, entity_type, created_by) values ('Other', 'personal', $1) returning id`, [OUTSIDER]);
   otherOrgId = (other.rows[0] as { id: string }).id;
 });
 

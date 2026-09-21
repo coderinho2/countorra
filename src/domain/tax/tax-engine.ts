@@ -25,7 +25,42 @@ import type { CalculationStatus, RuleFallback } from "./rules/resolve-rule-set";
  * each with a reason code and a sentence safe to show a person. Nothing
  * about them is exceptional, and modelling them as throws is what produced
  * opaque errors in the UI.
+ *
+ * SCOPE: PERSONAL (INDIVIDUAL) INCOME TAX ONLY
+ *
+ * Countorra launches as a personal finance and personal tax product
+ * (src/domain/organizations/launch-scope.ts). This engine calculates one
+ * thing: an individual's income tax — the federal Form 1040 and the resident
+ * individual return of each supported state (California Form 540, New York
+ * IT-201, Arizona Form 140; Texas and Florida levy no personal income tax).
+ * See `TAX_ENGINE_SCOPE`.
+ *
+ * Self-employment income is in scope because it is part of an INDIVIDUAL's
+ * return: net profit from Schedule C and the self-employment tax on
+ * Schedule SE are schedules of Form 1040, filed by anyone with side income.
+ * No business return — corporate (1120), partnership (1065) or S-corporation
+ * (1120-S) — is modelled, and none may be claimed. A workspace recorded as a
+ * business is refused by tax preparation rather than given a personal return
+ * (src/domain/tax-preparation/completeness.ts).
  */
+
+/**
+ * What the tax engine covers, stated once so product copy, the assistant and
+ * tests read it from the same place.
+ */
+export const TAX_ENGINE_SCOPE = {
+  returnType: "individual",
+  country: "US",
+  federal: "Form 1040, including Schedule C net profit and Schedule SE self-employment tax",
+  states: {
+    US_CA: "California Form 540 (resident individual)",
+    US_NY: "New York Form IT-201 (resident individual)",
+    US_AZ: "Arizona Form 140 (resident individual)",
+    US_TX: "No personal income tax",
+    US_FL: "No personal income tax",
+  },
+  notSupported: ["Business returns (Forms 1120, 1120-S, 1065)", "Payroll or employer tax filings", "Sales and use tax returns", "Filing or submitting any return"],
+} as const;
 
 export type UnsupportedReason =
   | "unsupported_jurisdiction"
@@ -65,8 +100,9 @@ export interface TaxCalculationInput {
    * base applies to the COMBINED total of wages and self-employment
    * earnings, with wages counted first.
    *
-   * Omitting it means "no W-2 wages", which is right for a pure freelancer
-   * and wrong for someone with a job and a side business — the latter would
+   * Omitting it means "no W-2 wages", which is right for someone whose only
+   * earned income is self-employment, and wrong for someone with a job and
+   * side income — the latter would
    * otherwise be charged 12.4% on self-employment earnings that are already
    * over the base. Defaults to zero, so existing callers are unaffected.
    */

@@ -24,7 +24,7 @@ import { Reveal } from "@/components/marketing/reveal";
 export const metadata: Metadata = {
   title: null,
   description:
-    "One system for income, expenses, accounts and invoices — that answers real questions about them, grounded in your own records.",
+    "One system for your income, spending, accounts and taxes — that answers real questions about them, grounded in your own records.",
   alternates: { canonical: "/" },
 };
 
@@ -65,8 +65,8 @@ export default function Home() {
           <div className="mx-auto max-w-[1200px] px-6 py-24 lg:px-10 lg:py-32">
             <Reveal>
               <SectionHeader index={1} title="Your finances, understood.">
-                An AI accountant and the workspace it works in — the ledger, the invoices, the
-                reports and the tax year, all reading from the same records.
+                An AI accountant for your personal finances and the workspace it works in — your
+                accounts, your spending, the reports and the tax year, all reading from the same records.
               </SectionHeader>
             </Reveal>
             <Reveal delayMs={80} className="mt-8">
@@ -110,9 +110,9 @@ export default function Home() {
         <section id="solutions" className="border-b border-border-subtle bg-surface-sunken/40">
           <div className="mx-auto max-w-[1200px] px-6 py-24 lg:px-10 lg:py-32">
             <Reveal>
-              <SectionHeader index={3} title="Built to fit how you actually work with money.">
-                The same system adapts its focus depending on whether you are managing personal
-                finances, freelance income, or a business.
+              <SectionHeader index={3} title="Built for your own money.">
+                Countorra is made for personal finances — one person&apos;s or one household&apos;s
+                money, and the tax year that comes with it.
               </SectionHeader>
             </Reveal>
             <Reveal delayMs={80} className="mt-10">

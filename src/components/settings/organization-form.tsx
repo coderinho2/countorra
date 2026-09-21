@@ -54,7 +54,11 @@ export function OrganizationForm({ organization, canEdit }: { organization: Orga
               <SelectValue placeholder="Not set" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ein">EIN</SelectItem>
+              {/* An EIN identifies an employer or business; a person files
+                  under an SSN or ITIN. Shown only where one is already
+                  stored, so a workspace created before the personal-only
+                  launch still displays its value. */}
+              {organization.taxIdentifierType === "ein" && <SelectItem value="ein">EIN</SelectItem>}
               <SelectItem value="ssn">SSN</SelectItem>
               <SelectItem value="itin">ITIN</SelectItem>
               <SelectItem value="other">Other</SelectItem>

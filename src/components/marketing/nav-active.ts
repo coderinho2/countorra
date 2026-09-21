@@ -3,9 +3,9 @@
  *
  * Kept as a pure function rather than inlined into the header because the
  * rule it encodes is not obvious: a nav item stays active for its whole
- * *section*, not just its own page. `/solutions/freelancer` has no nav item
- * of its own, so "Solutions" must remain lit — otherwise the header goes
- * blank the moment a visitor drills into a persona page and stops telling
+ * *section*, not just its own page. A page below a nav item's route has no
+ * nav item of its own, so the item it belongs to must remain lit — otherwise
+ * the header goes blank the moment a visitor drills into it and stops telling
  * them where they are.
  *
  * Section membership is a path-*segment* prefix, never a string prefix. A

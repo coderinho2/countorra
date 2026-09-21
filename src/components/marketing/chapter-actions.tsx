@@ -4,7 +4,7 @@ import { CheckCircle } from "@phosphor-icons/react/dist/ssr/CheckCircle";
 import { ArrowsLeftRight } from "@phosphor-icons/react/dist/ssr/ArrowsLeftRight";
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr/ArrowRight";
 import { Tag } from "@phosphor-icons/react/dist/ssr/Tag";
-import { FileText } from "@phosphor-icons/react/dist/ssr/FileText";
+import { Receipt } from "@phosphor-icons/react/dist/ssr/Receipt";
 import { ChartBar } from "@phosphor-icons/react/dist/ssr/ChartBar";
 import { Badge } from "@/components/ui/badge";
 
@@ -17,7 +17,7 @@ const WORKFLOW = [
 
 const ACTIONS = [
   { icon: Tag, label: "Categorize a transaction", mode: "confirm" as const },
-  { icon: FileText, label: "Create a draft invoice", mode: "confirm" as const },
+  { icon: Receipt, label: "Record an expense", mode: "confirm" as const },
   { icon: ChartBar, label: "Prepare a report", mode: "auto" as const },
 ];
 

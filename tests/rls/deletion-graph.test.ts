@@ -52,7 +52,7 @@ beforeEach(async () => {
   // Created as the owner: the bootstrap trigger writes an audit event and
   // `record_audit_event` refuses to run without a session.
   await db.asUser(OWNER);
-  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Acme', 'business', $1) returning id`, [OWNER]);
+  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Acme', 'personal', $1) returning id`, [OWNER]);
   orgId = (org.rows[0] as { id: string }).id;
 
   await db.asAdmin(async (query) => {

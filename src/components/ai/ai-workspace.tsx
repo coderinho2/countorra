@@ -4,7 +4,6 @@ import { useState } from "react";
 import { AiConversationList } from "./ai-conversation-list";
 import { AiChatPanel, type Turn } from "./ai-chat-panel";
 import { loadConversationAction, type ConversationSummary } from "@/server/ai/actions";
-import type { UserEntityType } from "@/domain/organizations/types";
 
 function toTurns(messages: { id: string; role: string; content: string | null }[]): Turn[] {
   return messages
@@ -24,15 +23,13 @@ function toTurns(messages: { id: string; role: string; content: string | null }[
  */
 export function AiWorkspace({
   organizationId,
-  entityType,
   initialConversations,
   grounding,
 }: {
   organizationId: string;
-  entityType: UserEntityType;
   initialConversations: ConversationSummary[];
   /** Real counts of what the assistant can read, from the server. */
-  grounding: { transactions: number; invoices: number; accounts: number; through: string };
+  grounding: { transactions: number; documents: number; accounts: number; through: string };
 }) {
   const [conversations, setConversations] = useState(initialConversations);
   const [selectionToken, setSelectionToken] = useState(0);
@@ -79,7 +76,6 @@ export function AiWorkspace({
       <AiChatPanel
         key={selectionToken}
         organizationId={organizationId}
-        entityType={entityType}
         initialConversationId={activeId}
         initialMessages={initialMessages}
         onConversationCreated={handleConversationCreated}

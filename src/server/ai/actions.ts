@@ -5,6 +5,8 @@ import { createAdminClient } from "@/server/supabase/admin";
 import { requireOrgMembership } from "@/server/auth/session";
 import { createAiService, buildSystemPrompt } from "./service-factory";
 import { createToolRegistry } from "@/domain/ai/tools/registry";
+import { isToolInLaunchScope } from "@/domain/ai/tools/launch-scope";
+import { DEFERRED_MODULE_MESSAGE } from "@/domain/organizations/launch-scope";
 import { assertAuthorized, UnauthorizedAiActionError } from "@/domain/ai/safety";
 import { ProviderError } from "@/domain/ai/provider-errors";
 import { parseToolInput } from "@/domain/ai/tools/types";
@@ -371,6 +373,12 @@ export async function confirmAiAction(input: ConfirmAiActionInput): Promise<Conf
   if (!parsed.data.approve) {
     const rejected = await markActionRejected(client, action.id);
     return rejected ? { status: "rejected" } : { status: "rejected", error: "This action is no longer pending." };
+  }
+
+  // A write proposed before the launch scope narrowed — a draft invoice — is
+  // not replayed while its module is deferred. It stays pending, unexecuted.
+  if (!isToolInLaunchScope(action.toolName)) {
+    return { status: "rejected", error: DEFERRED_MODULE_MESSAGE };
   }
 
   try {

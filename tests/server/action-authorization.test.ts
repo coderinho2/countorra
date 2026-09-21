@@ -33,6 +33,13 @@ const state = vi.hoisted(() => {
   };
 });
 
+// Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts).
+// These tests exercise the preserved module as it will behave once it is
+// re-enabled; tests/server/launch-scope.test.ts proves it refuses meanwhile.
+vi.mock("@/domain/organizations/launch-scope", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/domain/organizations/launch-scope")>()),
+  isModuleEnabled: () => true,
+}));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     const e = new Error(`NEXT_REDIRECT:${to}`) as Error & { digest?: string };
@@ -138,7 +145,7 @@ vi.mock("@/server/storage/documents", () => ({
 }));
 vi.mock("@/server/db/repositories/organizations", () => ({
   updateOrganization: write("updateOrganization"),
-  getOrganization: async (_c: unknown, id: string) => ({ id, name: "Org", entityType: "business", country: "US", baseCurrency: "USD" }),
+  getOrganization: async (_c: unknown, id: string) => ({ id, name: "Org", entityType: "personal", country: "US", baseCurrency: "USD" }),
   listMyOrganizations: async () => [],
 }));
 vi.mock("@/server/db/repositories/categories", () => ({ createCategory: write("createCategory"), listCategories: async () => [] }));

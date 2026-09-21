@@ -47,8 +47,10 @@ export const metadata: Metadata = {
 
 const TAGLINES: Record<PlanTier, string> = {
   free: "For getting started, and for seeing your own numbers clearly.",
-  premium: "For individuals and freelancers who need deeper financial intelligence.",
-  business: "For organizations that need business workflows and collaboration.",
+  premium: "For people who want bank connections and deeper financial intelligence.",
+  // "Business" is the name of the plan tier, not the kind of workspace:
+  // every workspace is personal at launch (src/domain/organizations/launch-scope.ts).
+  business: "For households and heavy users who need more workspaces and more AI.",
 };
 
 const PLANS = (["free", "premium", "business"] as const).map((tier) => {
@@ -326,12 +328,12 @@ export default async function PricingPage() {
         </div>
       </section>
 
-      {/* 6. Product-context: workspace types */}
+      {/* 6. Product-context: what a personal workspace includes */}
       <section className="border-t border-border-subtle bg-surface-sunken/40">
         <div className="mx-auto max-w-[1100px] px-6 py-16 lg:px-10 lg:py-20">
           <Reveal>
             <h2 className="max-w-[36ch] text-2xl font-semibold tracking-[-0.01em] text-ink sm:text-[28px]">
-              Choose the workspace that matches how you manage money.
+              What every workspace includes.
             </h2>
           </Reveal>
           <Reveal delayMs={80} className="mt-10">

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { House } from "@phosphor-icons/react/dist/ssr/House";
 import { ArrowsLeftRight } from "@phosphor-icons/react/dist/ssr/ArrowsLeftRight";
 import { Wallet } from "@phosphor-icons/react/dist/ssr/Wallet";
-import { FileText } from "@phosphor-icons/react/dist/ssr/FileText";
+import { Calculator } from "@phosphor-icons/react/dist/ssr/Calculator";
 import { FolderOpen } from "@phosphor-icons/react/dist/ssr/FolderOpen";
 import { ChatCircleText } from "@phosphor-icons/react/dist/ssr/ChatCircleText";
 import { MagnifyingGlass } from "@phosphor-icons/react/dist/ssr/MagnifyingGlass";
@@ -30,7 +30,7 @@ const SIDEBAR_GROUPS = [
       { label: "Documents", icon: FolderOpen },
     ],
   },
-  { label: "Billing", items: [{ label: "Invoices", icon: FileText }] },
+  { label: "Analysis", items: [{ label: "Tax preparation", icon: Calculator }] },
 ];
 
 interface Row {
@@ -56,7 +56,7 @@ const VIEWS: View[] = [
   {
     tab: "Overview",
     pipeline: "4,218 transactions → categorized → analyzed",
-    metricLabel: "Cash position",
+    metricLabel: "Available balance",
     metricValueMinor: 4218460,
     delta: "+6.2% vs. last month",
     deltaPositive: true,
@@ -66,9 +66,9 @@ const VIEWS: View[] = [
     ],
     insight: { text: "Dining spend is 18% above your 3-month average.", confidence: "High confidence", support: "Based on 14 transactions" },
     rows: [
-      { label: "Client retainer — Nordholt Studio", date: "Nov 21", amountMinor: 480000 },
-      { label: "Cloud hosting", date: "Nov 19", amountMinor: -8900 },
-      { label: "INV-1042 · Overdue", date: "Nov 3", amountMinor: -240000, badge: "overdue" },
+      { label: "Paycheck — Northwind Co.", date: "Nov 21", amountMinor: 480000 },
+      { label: "Grocery store", date: "Nov 19", amountMinor: -12480 },
+      { label: "Streaming subscription", date: "Nov 3", amountMinor: -1599, badge: "recurring" },
     ],
   },
   {
@@ -80,13 +80,13 @@ const VIEWS: View[] = [
     deltaPositive: true,
     secondary: [
       { label: "Dining", valueMinor: 84200 },
-      { label: "Software", valueMinor: 112400 },
+      { label: "Groceries", valueMinor: 112400 },
     ],
     insight: { text: "Dining spend is 18% above your 3-month average.", confidence: "High confidence", support: "Based on 14 transactions" },
     rows: [
-      { label: "Contractor payment", date: "Nov 12", amountMinor: -240000 },
-      { label: "Cloud hosting", date: "Nov 19", amountMinor: -8900 },
-      { label: "Office supplies", date: "Nov 15", amountMinor: -4620 },
+      { label: "Rent", date: "Nov 1", amountMinor: -185000 },
+      { label: "Grocery store", date: "Nov 19", amountMinor: -12480 },
+      { label: "Electric utility", date: "Nov 15", amountMinor: -9620 },
     ],
   },
   {
@@ -102,44 +102,43 @@ const VIEWS: View[] = [
     ],
     insight: { text: "Cash flow has stayed positive for 4 consecutive months.", confidence: "Stable trend", support: "Based on the last 4 months" },
     rows: [
-      { label: "Client retainer — Nordholt Studio", date: "Nov 21", amountMinor: 480000 },
-      { label: "Contractor payment", date: "Nov 12", amountMinor: -240000 },
-      { label: "Cloud hosting", date: "Nov 19", amountMinor: -8900 },
+      { label: "Paycheck — Northwind Co.", date: "Nov 21", amountMinor: 480000 },
+      { label: "Rent", date: "Nov 1", amountMinor: -185000 },
+      { label: "Grocery store", date: "Nov 19", amountMinor: -12480 },
     ],
   },
   {
-    // Receivables rather than the "Forecast" view this used to show. The
-    // product can forecast — `forecastCashFlow` is a real AI tool — but it
-    // does so through the assistant, and there is no forecast tab anywhere in
-    // the dashboard. A preview that invents a screen is still a preview of
-    // something the user will not find. Receivables is a surface that exists.
-    tab: "Receivables",
-    pipeline: "12 invoices → matched to payments → 2 flagged overdue",
-    metricLabel: "Outstanding",
-    metricValueMinor: 724000,
-    delta: "2 invoices past due",
+    // Subscriptions, not a "Forecast" view: the product forecasts through
+    // the assistant (`forecastCashFlow`), and there is no forecast tab in the
+    // dashboard. Recurring commitments are a surface that exists (Insights).
+    // A preview that invents a screen is still a preview of something the
+    // user will not find.
+    tab: "Subscriptions",
+    pipeline: "6 months of charges → recurring payments detected → 1 price change",
+    metricLabel: "Recurring, per year",
+    metricValueMinor: 216000,
+    delta: "1 price increase",
     deltaPositive: false,
     secondary: [
-      { label: "Overdue", valueMinor: 244000 },
-      { label: "Due this month", valueMinor: 480000 },
+      { label: "Bills", valueMinor: 151200 },
+      { label: "Subscriptions", valueMinor: 64800 },
     ],
     insight: {
-      text: "INV-1042 has been outstanding for 31 days — the longest this year.",
-      confidence: "Needs action",
-      support: "Based on 12 invoices",
+      text: "Your streaming subscription rose from $12.99 to $15.99 in October.",
+      confidence: "High confidence",
+      support: "Based on 6 months of charges",
     },
     rows: [
-      { label: "INV-1042 · Nordholt Studio", date: "Nov 3", amountMinor: -240000, badge: "overdue" },
-      { label: "INV-1048 · Kestrel Labs", date: "Nov 18", amountMinor: -180000 },
-      { label: "INV-1051 · Aleria Group", date: "Nov 24", amountMinor: -300000 },
+      { label: "Streaming subscription", date: "Nov 3", amountMinor: -1599, badge: "recurring" },
+      { label: "Gym membership", date: "Nov 5", amountMinor: -4900, badge: "recurring" },
+      { label: "Phone plan", date: "Nov 8", amountMinor: -6500, badge: "recurring" },
     ],
   },
 ];
 
-const RECEIVABLES_BREAKDOWN = [
-  { categoryId: "current", categoryName: "Current", total: money(480000, "USD") },
-  { categoryId: "late-30", categoryName: "1–30 days late", total: money(180000, "USD") },
-  { categoryId: "late-60", categoryName: "31+ days late", total: money(64000, "USD") },
+const RECURRING_BREAKDOWN = [
+  { categoryId: "bills", categoryName: "Bills", total: money(151200, "USD") },
+  { categoryId: "subscriptions", categoryName: "Subscriptions", total: money(64800, "USD") },
 ];
 
 const SPENDING_CATEGORIES = [
@@ -174,7 +173,7 @@ function Sparkline() {
 function Visual({ tab }: { tab: string }) {
   if (tab === "Spending") return <CategoryBreakdown items={SPENDING_CATEGORIES} />;
   if (tab === "Cash Flow") return <MonthlyBarChart data={CASH_FLOW_MONTHS} />;
-  if (tab === "Receivables") return <CategoryBreakdown items={RECEIVABLES_BREAKDOWN} />;
+  if (tab === "Subscriptions") return <CategoryBreakdown items={RECURRING_BREAKDOWN} />;
   return <Sparkline />;
 }
 
@@ -213,7 +212,7 @@ export function HeroPreview() {
         </div>
         <div className="flex items-center gap-3">
           <Bell size={16} className="text-text-tertiary" />
-          <span className="hidden text-[13px] font-medium text-text-primary sm:inline">Nordholt Studio</span>
+          <span className="hidden text-[13px] font-medium text-text-primary sm:inline">My Finances</span>
         </div>
       </div>
 

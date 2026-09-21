@@ -21,8 +21,8 @@ import type { TaxCalculationInput, TaxCalculationOutcome, TaxTraceStep } from ".
  *   1. Self-employment tax is computed FIRST, from net profit alone. It does
  *      not depend on income tax, and it is owed even by someone whose
  *      standard deduction wipes out their income tax entirely — a fact that
- *      surprises most freelancers and is the single most common way an
- *      estimate comes out too low.
+ *      surprises most people with self-employment income and is the single
+ *      most common way an estimate comes out too low.
  *   2. Half of that SE tax is an above-the-line deduction (IRC § 164(f)), so
  *      it reduces AGI before the standard deduction is applied.
  *   3. Taxable income = AGI − standard deduction, floored at zero.
@@ -257,8 +257,8 @@ interface SelfEmploymentResult {
  * THE BUG THIS REPLACED
  *
  * The first version treated Schedule C profit as the taxpayer's only
- * Social-Security-bearing income. For a pure freelancer that is right. For
- * someone with a job and a side business it is badly wrong in the expensive
+ * Social-Security-bearing income. For someone with no other earned income
+ * that is right. For someone with a job and side income it is badly wrong in the expensive
  * direction: a $200,000 employee with $50,000 of consulting income was
  * charged 12.4% on the consulting earnings even though their salary had
  * already used the entire wage base. That is roughly $5,700 of tax they do

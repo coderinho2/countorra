@@ -16,6 +16,7 @@ import { describeExclusions } from "@/domain/money/aggregate";
 import { money } from "@/domain/money/money";
 import { isSupportedCurrency, type CurrencyCode } from "@/domain/money/currency";
 import { cn } from "@/lib/utils";
+import { isModuleEnabled } from "@/domain/organizations/launch-scope";
 
 /**
  * Deterministic reports (product spec §17) — every figure here comes from the
@@ -56,7 +57,8 @@ export default async function ReportsPage({
     getTransactionTotals(client, { organizationId: orgId, dateFrom: range.from, dateTo: range.to }),
     getCategoryTotals(client, { organizationId: orgId, from: range.from, to: range.to }),
     listCategories(client, orgId),
-    listInvoices(client, { organizationId: orgId, pageSize: 200 }),
+    // Invoicing is deferred at launch; don't read what the page won't show.
+    isModuleEnabled("invoicing") ? listInvoices(client, { organizationId: orgId, pageSize: 200 }) : Promise.resolve({ invoices: [] as Awaited<ReturnType<typeof listInvoices>>["invoices"] }),
   ]);
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
@@ -83,7 +85,7 @@ export default async function ReportsPage({
       <PageHeader
         eyebrow="Analysis"
         title="Reports"
-        description={`${organization.name} — profit and loss for the selected period.`}
+        description={`${organization.name} — income and spending for the selected period.`}
         actions={<DateRangePicker activePreset={preset} />}
       />
 
@@ -92,7 +94,7 @@ export default async function ReportsPage({
           which currency, before it shows a single figure. */}
       <section className="flex flex-col gap-5">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-          <p className="text-[11px] font-semibold tracking-[0.02em] text-text-tertiary uppercase">Profit and loss</p>
+          <p className="text-[11px] font-semibold tracking-[0.02em] text-text-tertiary uppercase">Income and spending</p>
           <p className="font-numeric text-[13px] text-text-secondary">
             {range.from} — {range.to} · {currency}
           </p>
@@ -112,13 +114,14 @@ export default async function ReportsPage({
             </dd>
           </div>
           <div className="flex flex-col gap-1 sm:px-8">
-            <dt className="text-[13px] text-text-secondary">Profit</dt>
+            <dt className="text-[13px] text-text-secondary">Net</dt>
             <dd>
               <Amount value={profit} size="prominent" tone={profit.amountMinor < 0 ? "negative" : "positive"} sign={profit.amountMinor < 0 ? "negative" : "none"} />
             </dd>
           </div>
           <div className="flex flex-col gap-1 sm:px-8">
-            <dt className="text-[13px] text-text-secondary">Margin</dt>
+            {/* Net as a share of income — the same calculation a business calls margin. */}
+            <dt className="text-[13px] text-text-secondary">Savings rate</dt>
             <dd className="font-numeric text-[22px] leading-7 font-medium tracking-[-0.01em] text-ink">{margin === null ? "—" : `${margin}%`}</dd>
           </div>
         </dl>
@@ -189,7 +192,7 @@ export default async function ReportsPage({
             {/* The result line is the one figure a P&L exists to produce, so
                 it gets a heavier top rule and the prominent numeric scale. */}
             <TableRow className="border-t-2 border-t-border hover:bg-transparent">
-              <TableCell className="text-[15px] font-medium text-ink">Net {profit.amountMinor < 0 ? "loss" : "profit"}</TableCell>
+              <TableCell className="text-[15px] font-medium text-ink">Net {profit.amountMinor < 0 ? "shortfall" : "saved"}</TableCell>
               <TableCell numeric className="text-[13px] text-text-tertiary">
                 {margin === null ? "—" : `${margin}%`}
               </TableCell>
@@ -212,7 +215,8 @@ export default async function ReportsPage({
         </PanelFooter>
       </Panel>
 
-      {organization.entityType !== "personal" && (
+      {/* Deferred with the rest of invoicing (src/domain/organizations/launch-scope.ts). */}
+      {isModuleEnabled("invoicing") && (
         <section className="flex flex-col gap-4">
           <SectionHeading
             title="Invoices issued in this period"

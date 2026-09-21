@@ -130,7 +130,7 @@ export function CommandPalette({ organizationId, entityType }: { organizationId:
         >
           <DialogPrimitive.Title className="sr-only">Search</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Search transactions, invoices, customers and documents, or jump to a section.
+            Search transactions and documents, or jump to a section.
           </DialogPrimitive.Description>
 
           <Command shouldFilter={false} loop>
@@ -140,7 +140,7 @@ export function CommandPalette({ organizationId, entityType }: { organizationId:
                 autoFocus
                 value={query}
                 onValueChange={setQuery}
-                placeholder="Search transactions, invoices, customers, documents..."
+                placeholder="Search transactions, documents..."
                 className="text-text-primary placeholder:text-text-tertiary h-12 w-full bg-transparent text-[15px] outline-none"
               />
               {isPending && <span aria-hidden="true" className="ai-thinking-dot bg-accent size-1.5 shrink-0 rounded-full" />}
@@ -171,7 +171,7 @@ export function CommandPalette({ organizationId, entityType }: { organizationId:
               ) : !hasResults && !isPending ? (
                 <Command.Empty className="flex flex-col items-center gap-2 px-2 py-8 text-center">
                   <span className="text-text-primary text-[14px]">No matches for &ldquo;{query.trim()}&rdquo;</span>
-                  <span className="text-text-tertiary text-[13px]">Try a merchant, an invoice number, or an amount.</span>
+                  <span className="text-text-tertiary text-[13px]">Try a merchant, a file name, or an amount.</span>
                 </Command.Empty>
               ) : (
                 <>

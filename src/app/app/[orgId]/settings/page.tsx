@@ -31,7 +31,7 @@ import type { PlanTier } from "@/types/database";
 
 const SECTIONS = [
   { id: "profile", label: "Profile" },
-  { id: "organization", label: "Organization" },
+  { id: "organization", label: "Workspace" },
   { id: "categories", label: "Categories" },
   { id: "members", label: "Members" },
   { id: "plan", label: "Plan & usage" },
@@ -120,8 +120,8 @@ export default async function SettingsPage({ params }: { params: Promise<{ orgId
 
           <SettingsSection
             id="organization"
-            title="Organization"
-            description={`Legal and financial details for this ${organization.entityType} workspace. Currency and country affect every figure in the product.`}
+            title="Workspace"
+            description="The details of your personal workspace. Country, state and currency affect every figure in the product, and your state selects the tax rules used."
           >
             <OrganizationForm organization={organization} canEdit={can(membership.role, "org:update")} />
           </SettingsSection>

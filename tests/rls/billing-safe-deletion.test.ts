@@ -34,7 +34,7 @@ beforeEach(async () => {
     query(`insert into auth.users (id, email) values ($1, 'owner@example.test'), ($2, 'outsider@example.test')`, [OWNER, OUTSIDER]),
   );
   await db.asUser(OWNER);
-  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Paid', 'business', $1) returning id`, [OWNER]);
+  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Paid', 'personal', $1) returning id`, [OWNER]);
   orgId = (org.rows[0] as { id: string }).id;
 });
 

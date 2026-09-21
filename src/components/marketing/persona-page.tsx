@@ -7,15 +7,14 @@ import { cn } from "@/lib/utils";
 import type { Segment } from "./segments-data";
 
 /**
- * Shared scaffold for the three /solutions/[persona] pages.
+ * Shared scaffold for the /solutions/[persona] pages — one at the
+ * personal-only launch (/solutions/personal); the Freelancer and Business
+ * pages are retired and redirect to it (next.config.ts).
  *
- * The three pages share a design language, not a layout. Each supplies its
- * own emphasis — the question that persona actually opens the product with —
- * and its own visual, and `layout` decides whether that visual leads the
- * section or sits beside the capability list. A freelancer's page is about
- * getting paid; a business's is about operating; a personal one is about
- * where it went. Rendering all three as the same page with three different
- * paragraphs is exactly what §20 of the brief rules out.
+ * Each persona page supplies its own emphasis — the question that persona
+ * actually opens the product with — and its own visual, and `layout` decides
+ * whether that visual leads the section or sits beside the capability list.
+ * A personal page is about where the money went.
  */
 export function PersonaPage({
   segment,

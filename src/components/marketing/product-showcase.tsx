@@ -3,7 +3,7 @@ import { ThreeDPhotoCarousel, type CarouselCard } from "@/components/ui/3d-carou
 /**
  * The product showcase band on the landing page.
  *
- * Ten surfaces of the product, drawn in the product's own language — paper,
+ * Nine surfaces of the product, drawn in the product's own language — paper,
  * hairlines, ink, one navy accent, figures in a monospaced face — rather than
  * photographed or mocked in a foreign style. They are illustrations, and the
  * caption under the carousel says so: this repository does not ship screenshots
@@ -27,7 +27,7 @@ const CARDS: CarouselCard[] = [
   },
   {
     src: "/showcase/dashboard.svg",
-    alt: "A dashboard showing a cash position of $42,184.60, a six-month trend line, income, expenses and profit, and two items needing attention",
+    alt: "A dashboard showing an available balance of $42,184.60, a six-month trend line, money in, money out and the net, and two items needing attention",
     caption: "Your position, the month's movement, and the few things that want a decision.",
   },
   {
@@ -36,14 +36,9 @@ const CARDS: CarouselCard[] = [
     caption: "Income and expenses in one ledger, searchable and categorised.",
   },
   {
-    src: "/showcase/invoices.svg",
-    alt: "An invoice list with paid, sent and overdue statuses and an outstanding total of $3,550.00",
-    caption: "Invoices from draft to paid, with what is still outstanding in view.",
-  },
-  {
     src: "/showcase/reports.svg",
-    alt: "A profit and loss report for the first quarter of 2026 showing income, expenses, profit and a 33.3% margin",
-    caption: "Profit and loss for any period, calculated from the transactions themselves.",
+    alt: "An income and spending report for the first quarter of 2026 showing income, expenses, the net and a 33.3% savings rate",
+    caption: "Income and spending for any period, calculated from the transactions themselves.",
   },
   {
     src: "/showcase/forecast.svg",

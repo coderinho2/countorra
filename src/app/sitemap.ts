@@ -12,10 +12,7 @@ import { publicEnv } from "@/lib/env";
 const PUBLIC_ROUTES = [
   { path: "", priority: 1.0, changeFrequency: "weekly" as const },
   { path: "/product", priority: 0.9, changeFrequency: "monthly" as const },
-  { path: "/solutions", priority: 0.8, changeFrequency: "monthly" as const },
-  { path: "/solutions/personal", priority: 0.7, changeFrequency: "monthly" as const },
-  { path: "/solutions/freelancer", priority: 0.7, changeFrequency: "monthly" as const },
-  { path: "/solutions/business", priority: 0.7, changeFrequency: "monthly" as const },
+  { path: "/solutions/personal", priority: 0.8, changeFrequency: "monthly" as const },
   { path: "/pricing", priority: 0.9, changeFrequency: "monthly" as const },
   { path: "/security", priority: 0.7, changeFrequency: "monthly" as const },
   { path: "/resources", priority: 0.6, changeFrequency: "monthly" as const },

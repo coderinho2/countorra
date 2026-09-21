@@ -75,6 +75,15 @@ Twelve migrations in `supabase/migrations/`, applied in order:
 or business (DESIGN brief §6) — distinguished by `organizations.entity_type`.
 One table, one RLS pattern, instead of three parallel schemas.
 
+**Launch scope: personal only.** Countorra launches as a personal finance and
+personal tax product. The enum keeps all three values, but only `personal` can
+be created or chosen — enforced by the schema, onboarding, and a database
+trigger (`0051_personal_launch_scope.sql`) — and every workspace is presented
+as personal. Invoicing (invoices, customers, their assistant tools) is deferred:
+code and data kept, routes and actions switched off. The single switch is
+`src/domain/organizations/launch-scope.ts`; its comments say how to re-enable
+Freelancer and Business.
+
 **The United States is the first supported market** (`organizations` defaults
 to `country='US'`, `base_currency='USD'`). Jurisdiction-specific tax logic
 lives entirely behind `src/domain/tax`'s `TaxEngine` interface and registry

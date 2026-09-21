@@ -60,7 +60,7 @@ vi.mock("@/server/security/rate-limit", () => ({
 }));
 
 vi.mock("@/server/db/repositories/organizations", () => ({
-  getOrganization: async (_c: unknown, id: string) => ({ id, name: "Org", entityType: "business", country: "US", baseCurrency: "USD" }),
+  getOrganization: async (_c: unknown, id: string) => ({ id, name: "Org", entityType: "personal", country: "US", baseCurrency: "USD" }),
   listMyOrganizations: async () => [],
 }));
 

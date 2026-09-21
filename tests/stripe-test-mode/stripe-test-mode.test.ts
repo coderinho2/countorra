@@ -112,7 +112,7 @@ vi.mock("@/server/security/rate-limit", () => ({ enforceRateLimit: async () => (
 vi.mock("@/domain/audit/audit-log", () => ({ recordAuditEvent: async () => {}, AUDIT_ACTIONS: new Proxy({}, { get: (_t, k) => String(k) }) }));
 vi.mock("@/server/supabase/server", () => ({ createClient: async () => ({}) }));
 vi.mock("@/server/db/repositories/organizations", () => ({
-  getOrganization: async (_c: unknown, id: string) => ({ id, name: "TEST — Stripe test mode", entityType: "business", country: "US", baseCurrency: "USD" }),
+  getOrganization: async (_c: unknown, id: string) => ({ id, name: "TEST — Stripe test mode", entityType: "personal", country: "US", baseCurrency: "USD" }),
 }));
 vi.mock("@/server/db/repositories/subscriptions", () => ({ getSubscription: async () => app.subscription }));
 vi.mock("@/server/supabase/admin", () => ({

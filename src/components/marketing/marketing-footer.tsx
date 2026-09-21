@@ -7,8 +7,8 @@ const COLUMNS = [
     label: "Product",
     links: [
       { label: "Financial intelligence", href: "/product#financial-intelligence" },
-      { label: "Accounting", href: "/product#accounting" },
-      { label: "Invoicing", href: "/product#invoicing" },
+      { label: "Accounts", href: "/product#accounting" },
+      { label: "Personal taxes", href: "/product#taxes" },
       { label: "Documents", href: "/product#documents" },
       { label: "AI", href: "/product#financial-intelligence" },
     ],
@@ -16,9 +16,7 @@ const COLUMNS = [
   {
     label: "Solutions",
     links: [
-      { label: "Personal", href: "/solutions/personal" },
-      { label: "Freelancer", href: "/solutions/freelancer" },
-      { label: "Business", href: "/solutions/business" },
+      { label: "Personal finance", href: "/solutions/personal" },
     ],
   },
   {

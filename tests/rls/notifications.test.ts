@@ -19,7 +19,7 @@ beforeEach(async () => {
   });
 
   await db.asUser(userA);
-  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Org A', 'business', $1) returning id`, [
+  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Org A', 'personal', $1) returning id`, [
     userA,
   ]);
   orgA = (org.rows[0] as { id: string }).id;

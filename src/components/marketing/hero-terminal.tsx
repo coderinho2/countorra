@@ -52,13 +52,13 @@ const PREVIEW_NET = [318_940, 322_100, 319_880, 336_400, 341_220, 421_846];
  *  the preview data used elsewhere on the page so the site tells one story. */
 const LEDGER = [
   { date: "09.04", label: "Northwind", amount: "−$784.00", tone: "negative" as const },
-  { date: "09.05", label: "Nordholt Studio", amount: "+$4,800.00", tone: "positive" as const },
+  { date: "09.05", label: "Paycheck", amount: "+$4,800.00", tone: "positive" as const },
   { date: "09.05", label: "Cascade Hosting", amount: "−$89.00", tone: "negative" as const },
   { date: "09.06", label: "Meridian Legal", amount: "−$320.00", tone: "negative" as const },
 ];
 
 const CAPABILITIES = [
-  { index: "01", title: "Understand", body: "Income, expenses, accounts and invoices as one system." },
+  { index: "01", title: "Understand", body: "Income, spending, accounts and taxes as one system." },
   { index: "02", title: "Track", body: "Every movement categorised and searchable." },
   { index: "03", title: "Analyse", body: "The comparison and the reason, not just a number." },
   { index: "04", title: "Ask", body: "Real questions answered from your own records." },
@@ -110,7 +110,7 @@ export function HeroTerminal() {
 
             <Reveal delayMs={80}>
               <p className="text-text-secondary mt-7 max-w-[42ch] text-[17px] leading-[26px]">
-                One system for income, expenses, accounts and invoices — that answers real questions about them, grounded in your own records.
+                One system for your income, spending, accounts and taxes — that answers real questions about them, grounded in your own records.
               </p>
             </Reveal>
 

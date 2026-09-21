@@ -6,6 +6,7 @@ import { parseSearchQuery } from "@/domain/search/query-parser";
 import { listTransactions } from "@/server/db/repositories/transactions";
 import { listInvoices } from "@/server/db/repositories/invoices";
 import { listCustomers } from "@/server/db/repositories/customers";
+import { isModuleEnabled } from "@/domain/organizations/launch-scope";
 import { listDocuments } from "@/server/db/repositories/documents";
 import { format, money } from "@/domain/money/money";
 import { isSupportedCurrency, type CurrencyCode } from "@/domain/money/currency";
@@ -49,7 +50,11 @@ export async function globalSearch(organizationId: string, rawQuery: string): Pr
   const parsed = parseSearchQuery(rawQuery);
   const searchText = parsed.freeText || rawQuery;
 
-  const wantsResource = (type: "transaction" | "invoice" | "customer" | "document") => !parsed.resourceType || parsed.resourceType === type;
+  // Invoices and customers belong to the invoicing module, deferred at launch
+  // (src/domain/organizations/launch-scope.ts): not searched while it is.
+  const invoicing = isModuleEnabled("invoicing");
+  const wantsResource = (type: "transaction" | "invoice" | "customer" | "document") =>
+    (invoicing || (type !== "invoice" && type !== "customer")) && (!parsed.resourceType || parsed.resourceType === type);
 
   const [transactionsResult, invoicesResult, customers, documents] = await Promise.all([
     wantsResource("transaction")

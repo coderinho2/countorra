@@ -15,26 +15,18 @@ export interface Segment {
   capabilities: string[];
 }
 
+/**
+ * Who Countorra is for. Personal only at launch
+ * (src/domain/organizations/launch-scope.ts); the Freelancer and Business
+ * segments are retired with those entity types. EntitySegments renders its
+ * switcher only when there is more than one segment to switch between.
+ */
 export const SEGMENTS: Segment[] = [
   {
     key: "personal",
     label: "Personal",
     headline: "Understand where your money actually goes.",
-    body: "Countorra tracks everyday spending, recurring costs, income, and overall financial health — so the picture of your money is always current, not reconstructed at tax time.",
-    capabilities: ["Spending by category", "Recurring cost detection", "Financial health score", "Cash flow forecast"],
-  },
-  {
-    key: "freelancer",
-    label: "Freelancer",
-    headline: "Run the financial side without the spreadsheet.",
-    body: "Track income and expenses as they happen, send invoices, watch cash flow across irregular pay cycles, and keep records organized for tax season without guessing.",
-    capabilities: ["Invoicing & payment tracking", "Income vs. expense clarity", "Cash flow across pay cycles", "Tax-ready organization"],
-  },
-  {
-    key: "business",
-    label: "Business",
-    headline: "See revenue, expenses, and customers in one system.",
-    body: "Understand performance across accounts, customers, and invoices, with cash flow and financial health figures that reflect the business as it actually runs.",
-    capabilities: ["Revenue & expense tracking", "Customer & invoice management", "Financial performance reporting", "Financial health score"],
+    body: "Countorra tracks everyday spending, recurring costs, income, and overall financial health — and organises your tax year as it happens, so nothing is reconstructed in April.",
+    capabilities: ["Spending by category", "Recurring cost detection", "Financial health score", "Cash flow forecast", "Personal tax preparation"],
   },
 ];

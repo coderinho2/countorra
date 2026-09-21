@@ -23,7 +23,7 @@ beforeEach(async () => {
   });
 
   await db.asUser(owner);
-  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Org A', 'business', $1) returning id`, [owner]);
+  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Org A', 'personal', $1) returning id`, [owner]);
   orgA = (org.rows[0] as { id: string }).id;
 
   await db.asAdmin((query) => query(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'viewer')`, [orgA, viewer]));

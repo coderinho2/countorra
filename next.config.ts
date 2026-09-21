@@ -93,6 +93,19 @@ const nextConfig: NextConfig = {
     },
   },
 
+  /**
+   * Countorra launches personal-only (src/domain/organizations/launch-scope.ts).
+   * The Solutions index and the Freelancer and Business pages are retired;
+   * permanent redirects keep every existing link and search result landing on
+   * the product as it is, rather than on a 404.
+   */
+  async redirects() {
+    return [
+      { source: "/solutions", destination: "/solutions/personal", permanent: true },
+      { source: "/solutions/freelancer", destination: "/solutions/personal", permanent: true },
+      { source: "/solutions/business", destination: "/solutions/personal", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

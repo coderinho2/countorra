@@ -14,6 +14,7 @@ import { listCategories } from "@/server/db/repositories/categories";
 import { listMerchants } from "@/server/db/repositories/merchants";
 import { listCustomers } from "@/server/db/repositories/customers";
 import { listInvoices, getInvoice, createInvoice } from "@/server/db/repositories/invoices";
+import { isModuleEnabled } from "@/domain/organizations/launch-scope";
 import { listDocuments, type AppDocument } from "@/server/db/repositories/documents";
 import { explainDocumentForAssistant } from "@/server/documents/intelligence-workspace";
 import { bankConnectionStatusForAssistant } from "@/server/bank-connections/workspace";
@@ -1282,7 +1283,9 @@ export function createToolRegistry(client: Client): AITool[] {
         const currentBalance = balanceTotal.total.amountMinor;
         const averageDailyNet = Math.round(period.summary.profit.amountMinor / 90);
 
-        const { invoices } = await listInvoices(client, { organizationId: ctx.organizationId, status: "sent" });
+        // Money owed to the person on sent invoices — only while invoicing is
+        // part of the product (src/domain/organizations/launch-scope.ts).
+        const { invoices } = isModuleEnabled("invoicing") ? await listInvoices(client, { organizationId: ctx.organizationId, status: "sent" }) : { invoices: [] };
         const upcomingInvoices = invoices.filter((i) => i.dueDate).map((i) => ({ dueDate: i.dueDate!, totalMinor: i.totalMinor }));
 
         const points = forecastCashFlow({

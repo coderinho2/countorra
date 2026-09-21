@@ -18,13 +18,13 @@ const CHAPTERS: Chapter[] = [
   {
     number: "01",
     title: "See everything.",
-    body: "Income, expenses, accounts, and invoices, read as one connected system instead of five separate spreadsheets.",
+    body: "Income, spending, accounts and your tax year, read as one connected system instead of five separate spreadsheets.",
     visual: <IntelligenceMap />,
   },
   {
     number: "02",
     title: "Ask anything.",
-    body: "Real questions, answered from your actual transactions and invoices — as financial UI, not a wall of chat text.",
+    body: "Real questions, answered from your actual transactions and documents — as financial UI, not a wall of chat text.",
     visual: <AskAnything />,
     anchor: "ask-anything",
   },
@@ -37,7 +37,7 @@ const CHAPTERS: Chapter[] = [
   {
     number: "04",
     title: "Act.",
-    body: "Categorize, draft an invoice, or follow up on one that's overdue. Reads and reports run instantly — anything that changes your records waits for your confirmation first.",
+    body: "Categorize a transaction, record an expense, or suggest a figure for your taxes. Reads and reports run instantly — anything that changes your records waits for your confirmation first.",
     visual: <ChapterActions />,
   },
   {

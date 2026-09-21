@@ -4,6 +4,9 @@ import type { Database } from "@/types/database";
 import { listAccounts, listAccountBalances } from "@/server/db/repositories/accounts";
 import { listTransactions, getTransactionTotals, getCategoryTotals } from "@/server/db/repositories/transactions";
 import { listInvoices } from "@/server/db/repositories/invoices";
+import { isModuleEnabled } from "@/domain/organizations/launch-scope";
+
+type InvoiceRow = Awaited<ReturnType<typeof listInvoices>>["invoices"][number];
 import { listInsights } from "@/server/db/repositories/insights";
 import { listMerchants } from "@/server/db/repositories/merchants";
 import { listCategories } from "@/server/db/repositories/categories";
@@ -58,12 +61,15 @@ export async function getDashboardData(client: Client, organization: Organizatio
   const currency: CurrencyCode = isSupportedCurrency(organization.baseCurrency) ? organization.baseCurrency : "EUR";
   const today = new Date().toISOString().slice(0, 10);
 
+  // Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts):
+  // no invoice is read, and receivables are not scored.
+  const invoicing = isModuleEnabled("invoicing");
   const [accounts, categories, merchants, recentTransactionsPage, overdue, insights] = await Promise.all([
     listAccounts(client, organization.id),
     listCategories(client, organization.id),
     listMerchants(client, organization.id),
     listTransactions(client, { organizationId: organization.id, page: 1, pageSize: 8 }),
-    listInvoices(client, { organizationId: organization.id, overdueOnly: true, pageSize: 20 }),
+    invoicing ? listInvoices(client, { organizationId: organization.id, overdueOnly: true, pageSize: 20 }) : Promise.resolve({ invoices: [] as InvoiceRow[], total: 0 }),
     listInsights(client, organization.id),
   ]);
 
@@ -126,7 +132,7 @@ export async function getDashboardData(client: Client, organization: Organizatio
     currency,
   ).total.amountMinor;
 
-  const { invoices: allInvoices } = await listInvoices(client, { organizationId: organization.id, pageSize: 200 });
+  const { invoices: allInvoices } = invoicing ? await listInvoices(client, { organizationId: organization.id, pageSize: 200 }) : { invoices: [] as InvoiceRow[] };
   const outstandingInvoices = allInvoices.filter((i) => i.status === "sent" || i.status === "overdue");
   // Invoices carry their own currency; stamping the base currency on each one
   // and adding them was the same fabrication as the balance total (FIN-03).
@@ -147,6 +153,7 @@ export async function getDashboardData(client: Client, organization: Organizatio
     recurringAnnualCostMinor: recurringAnnualCost,
     overdueReceivablesMinor: overdueReceivables,
     totalReceivablesMinor: totalReceivables,
+    includeReceivables: invoicing,
   });
 
   return {

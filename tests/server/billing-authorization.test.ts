@@ -103,7 +103,7 @@ vi.mock("@/server/supabase/admin", () => ({
 }));
 
 vi.mock("@/server/db/repositories/organizations", () => ({
-  getOrganization: async (_c: unknown, id: string) => ({ id, name: "Acme", entityType: "business", country: "US", baseCurrency: "USD" }),
+  getOrganization: async (_c: unknown, id: string) => ({ id, name: "Acme", entityType: "personal", country: "US", baseCurrency: "USD" }),
 }));
 
 vi.mock("@/server/db/repositories/subscriptions", () => ({

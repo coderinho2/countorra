@@ -52,12 +52,12 @@ describe("isNavItemActive", () => {
 
   it("activates exactly one top-level item on every public route", () => {
     const items = [...NAV_GROUPS.map((g) => g.href), ...DIRECT_LINKS.map((l) => l.href)];
+    // The public routes that exist. /solutions and the Freelancer and Business
+    // pages are retired at the personal-only launch and redirect to
+    // /solutions/personal (next.config.ts).
     const routes = [
       "/product",
-      "/solutions",
       "/solutions/personal",
-      "/solutions/freelancer",
-      "/solutions/business",
       "/resources",
       "/pricing",
       "/security",

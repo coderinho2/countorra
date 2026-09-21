@@ -5,16 +5,13 @@ import { Pulse } from "@phosphor-icons/react/dist/ssr/Pulse";
 import { ArrowsLeftRight } from "@phosphor-icons/react/dist/ssr/ArrowsLeftRight";
 import { Wallet } from "@phosphor-icons/react/dist/ssr/Wallet";
 import { ChartBar } from "@phosphor-icons/react/dist/ssr/ChartBar";
-import { FileText } from "@phosphor-icons/react/dist/ssr/FileText";
-import { UsersThree } from "@phosphor-icons/react/dist/ssr/UsersThree";
 import { FolderOpen } from "@phosphor-icons/react/dist/ssr/FolderOpen";
 import { LockKey } from "@phosphor-icons/react/dist/ssr/LockKey";
 import { User } from "@phosphor-icons/react/dist/ssr/User";
-import { Briefcase } from "@phosphor-icons/react/dist/ssr/Briefcase";
-import { Buildings } from "@phosphor-icons/react/dist/ssr/Buildings";
 import { BookOpen } from "@phosphor-icons/react/dist/ssr/BookOpen";
 import { Compass } from "@phosphor-icons/react/dist/ssr/Compass";
 import { ShieldCheck } from "@phosphor-icons/react/dist/ssr/ShieldCheck";
+import { Calculator } from "@phosphor-icons/react/dist/ssr/Calculator";
 import { Lifebuoy } from "@phosphor-icons/react/dist/ssr/Lifebuoy";
 
 /**
@@ -67,32 +64,16 @@ export const PRODUCT_MENU: NavGroup = {
       ],
     },
     {
-      label: "Invoicing",
+      label: "Taxes",
       items: [
-        { label: "Invoices", description: "Send invoices and track what's outstanding.", href: "/product#invoicing", icon: FileText },
-        { label: "Customers", description: "A record of who you bill and what they owe.", href: "/product#invoicing", icon: UsersThree },
+        { label: "Tax preparation", description: "Your tax year organised, with a U.S. federal and state estimate.", href: "/product#taxes", icon: Calculator },
       ],
     },
     {
       label: "Documents",
       items: [
-        { label: "Document intelligence", description: "Upload invoices and receipts, reviewed before they count.", href: "/product#documents", icon: FolderOpen },
+        { label: "Document intelligence", description: "Upload receipts, bills and tax forms, reviewed before they count.", href: "/product#documents", icon: FolderOpen },
         { label: "Private storage", description: "Documents are stored per organization, never public.", href: "/product#documents", icon: LockKey },
-      ],
-    },
-  ],
-};
-
-export const SOLUTIONS_MENU: NavGroup = {
-  label: "Solutions",
-  href: "/solutions",
-  categories: [
-    {
-      label: "By who you are",
-      items: [
-        { label: "Personal", description: "Understand everyday spending and financial health.", href: "/solutions/personal", icon: User },
-        { label: "Freelancer", description: "Income, invoices, and cash flow across pay cycles.", href: "/solutions/freelancer", icon: Briefcase },
-        { label: "Business", description: "Revenue, customers, and financial performance.", href: "/solutions/business", icon: Buildings },
       ],
     },
   ],
@@ -114,9 +95,16 @@ export const RESOURCES_MENU: NavGroup = {
   ],
 };
 
-export const NAV_GROUPS = [PRODUCT_MENU, SOLUTIONS_MENU, RESOURCES_MENU];
+/*
+ * Countorra launches personal-only (src/domain/organizations/launch-scope.ts).
+ * The Solutions menu listed Personal, Freelancer and Business; with one
+ * audience left it is a direct link, "Personal finance", rather than a menu
+ * of one.
+ */
+export const NAV_GROUPS = [PRODUCT_MENU, RESOURCES_MENU];
 
 export const DIRECT_LINKS: NavLeaf[] = [
+  { label: "Personal finance", description: "Everyday spending, financial health and your tax year.", href: "/solutions/personal", icon: User },
   { label: "Pricing", description: "Plans and what's included.", href: "/pricing", icon: ChartBar },
   { label: "Security", description: "How data isolation and access control work.", href: "/security", icon: ShieldCheck },
 ];

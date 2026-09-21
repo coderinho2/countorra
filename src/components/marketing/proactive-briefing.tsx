@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 const EXAMPLES = [
   { title: "Dining is running above pace", body: "About 22% higher than your usual monthly pace, driven by a handful of larger charges." },
   { title: "Three renewals land Thursday", body: "$340 in recurring software charges are due together this week." },
-  { title: "Invoice INV-1042 is overdue", body: "18 days past due for Nordholt Studio — worth a follow-up." },
+  { title: "A subscription price went up", body: "Your streaming plan rose from $12.99 to $15.99 in October — worth a look." },
   { title: "A new recurring charge appeared", body: "$29/month, first seen last week. Confirm it's expected." },
 ];
 

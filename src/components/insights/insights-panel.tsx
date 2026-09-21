@@ -18,6 +18,7 @@ import { money } from "@/domain/money/money";
 import type { CurrencyCode } from "@/domain/money/currency";
 import { cn } from "@/lib/utils";
 import type { Insight } from "@/server/db/repositories/insights";
+import { isModuleEnabled } from "@/domain/organizations/launch-scope";
 
 /**
  * The insights console.
@@ -116,7 +117,11 @@ export function InsightsPanel({
     });
   };
 
-  const ordered = [...insights].sort(
+  // An overdue-invoice insight stored before invoicing was deferred
+  // (src/domain/organizations/launch-scope.ts) would point at a page that is
+  // switched off; it is kept, not shown.
+  const visible = isModuleEnabled("invoicing") ? insights : insights.filter((insight) => !readData(insight.data).invoiceId && !insight.kind.includes("invoice"));
+  const ordered = [...visible].sort(
     (a, b) => SEVERITY_RANK[classify(a.kind).severity] - SEVERITY_RANK[classify(b.kind).severity] || b.generatedAt.localeCompare(a.generatedAt),
   );
 
@@ -126,7 +131,7 @@ export function InsightsPanel({
         <div className="flex flex-col gap-0.5">
           <h2 className="text-[11px] font-semibold tracking-[0.02em] text-text-tertiary uppercase">Active insights</h2>
           <p className="text-[13px] text-text-secondary">
-            {insights.length === 0 ? "Nothing flagged right now." : `${insights.length} ${insights.length === 1 ? "finding" : "findings"}, most urgent first`}
+            {visible.length === 0 ? "Nothing flagged right now." : `${visible.length} ${visible.length === 1 ? "finding" : "findings"}, most urgent first`}
           </p>
         </div>
         <Button size="sm" variant="secondary" disabled={pending} onClick={refresh}>
@@ -138,7 +143,7 @@ export function InsightsPanel({
       {ordered.length === 0 ? (
         <EmptyState
           title="No insights yet"
-          description="Run an analysis once you have some transaction history — Countorra looks for anomalies, recurring payment changes, and overdue invoices."
+          description="Run an analysis once you have some transaction history — Countorra looks for anomalies and recurring payment changes."
           icon={<MagnifyingGlass size={24} />}
         />
       ) : (

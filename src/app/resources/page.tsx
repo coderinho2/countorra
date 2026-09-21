@@ -11,10 +11,10 @@ export const metadata: Metadata = {
 };
 
 const CHAPTERS = [
-  { number: "01", title: "See everything.", body: "Income, expenses, accounts, and invoices, read as one connected system instead of five separate spreadsheets." },
-  { number: "02", title: "Ask anything.", body: "Real questions, answered from your actual transactions and invoices — as financial UI, not a wall of chat text." },
+  { number: "01", title: "See everything.", body: "Income, spending, accounts and your tax year, read as one connected system instead of five separate spreadsheets." },
+  { number: "02", title: "Ask anything.", body: "Real questions, answered from your actual transactions and documents — as financial UI, not a wall of chat text." },
   { number: "03", title: "Understand what changed.", body: "When something moves, Countorra shows the comparison and the reason, not just a number." },
-  { number: "04", title: "Act.", body: "Categorize, draft an invoice, or follow up on one that's overdue — reads run instantly, writes wait for your confirmation." },
+  { number: "04", title: "Act.", body: "Categorize a transaction, record an expense, or suggest a figure for your taxes — reads run instantly, writes wait for your confirmation." },
   { number: "05", title: "Stay ahead.", body: "Countorra can surface things worth noticing before you go looking for them." },
 ];
 

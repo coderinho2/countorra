@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import type { Organization } from "@/domain/organizations/types";
+import type { LaunchEntityType } from "@/domain/organizations/launch-scope";
 
 type Client = SupabaseClient<Database>;
 
@@ -39,7 +40,8 @@ export async function getOrganization(client: Client, organizationId: string): P
 
 export interface CreateOrganizationInput {
   name: string;
-  entityType: Organization["entityType"];
+  /** Personal only at launch; the database enforces it as well (0051). */
+  entityType: LaunchEntityType;
   country?: string;
   stateRegion?: string | null;
   baseCurrency?: string;

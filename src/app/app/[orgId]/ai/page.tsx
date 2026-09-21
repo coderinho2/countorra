@@ -3,15 +3,16 @@ import { requireOrgMembership } from "@/server/auth/session";
 import { createClient } from "@/server/supabase/server";
 import { getOrganization } from "@/server/db/repositories/organizations";
 import { listTransactions } from "@/server/db/repositories/transactions";
-import { listInvoices } from "@/server/db/repositories/invoices";
+import { listDocuments } from "@/server/db/repositories/documents";
 import { listAccounts } from "@/server/db/repositories/accounts";
 import { listConversationsAction } from "@/server/ai/actions";
 import { AiWorkspace } from "@/components/ai/ai-workspace";
 
 /**
- * /app/[orgId]/ai (product spec §1–§11): the one Countorra surface,
- * behavior adapted by `organization.entityType` — never a second AI system.
- * Conversation list, entity type and the grounding counts are all fetched
+ * /app/[orgId]/ai (product spec §1–§11): the one Countorra assistant — a
+ * personal finance and personal tax assistant, since Countorra launches
+ * personal-only (src/domain/organizations/launch-scope.ts).
+ * Conversation list and the grounding counts are all fetched
  * here, server-side, from the organization's own rows (never trusted from the
  * client), and handed down to the client workspace that owns turn-by-turn
  * state.
@@ -47,10 +48,10 @@ export default async function AiAssistantPage({ params }: { params: Promise<{ or
   const organization = await getOrganization(client, orgId);
   if (!organization) notFound();
 
-  const [conversations, transactionPage, invoicePage, accounts] = await Promise.all([
+  const [conversations, transactionPage, documents, accounts] = await Promise.all([
     listConversationsAction(orgId),
     listTransactions(client, { organizationId: orgId, pageSize: 1 }),
-    listInvoices(client, { organizationId: orgId, pageSize: 1 }),
+    listDocuments(client, orgId),
     listAccounts(client, orgId),
   ]);
 
@@ -58,11 +59,10 @@ export default async function AiAssistantPage({ params }: { params: Promise<{ or
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <AiWorkspace
         organizationId={orgId}
-        entityType={organization.entityType}
         initialConversations={conversations}
         grounding={{
           transactions: transactionPage.total,
-          invoices: invoicePage.total,
+          documents: documents.length,
           accounts: accounts.length,
           through: new Date().toISOString().slice(0, 10),
         }}

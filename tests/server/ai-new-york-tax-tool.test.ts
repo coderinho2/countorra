@@ -29,7 +29,7 @@ vi.mock("@/server/db/repositories/organizations", () => ({
   getOrganization: async (_c: unknown, id: string) => ({
     id,
     name: "Acme",
-    entityType: "freelancer",
+    entityType: "personal",
     country: state.country,
     stateRegion: state.stateRegion,
     baseCurrency: state.baseCurrency,

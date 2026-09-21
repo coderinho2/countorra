@@ -37,6 +37,13 @@ const state = vi.hoisted(() => {
   };
 });
 
+// Invoicing is deferred at launch (src/domain/organizations/launch-scope.ts).
+// These tests exercise the preserved module as it will behave once it is
+// re-enabled; tests/server/launch-scope.test.ts proves it refuses meanwhile.
+vi.mock("@/domain/organizations/launch-scope", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/domain/organizations/launch-scope")>()),
+  isModuleEnabled: () => true,
+}));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`NEXT_REDIRECT;${to}`); } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ getAll: () => [], set: () => {} }) }));

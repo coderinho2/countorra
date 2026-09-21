@@ -35,7 +35,7 @@ beforeEach(async () => {
   });
 
   await db.asUser(STAYER);
-  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Shared', 'business', $1) returning id`, [STAYER]);
+  const org = await db.query(`insert into organizations (name, entity_type, created_by) values ('Shared', 'personal', $1) returning id`, [STAYER]);
   orgId = (org.rows[0] as { id: string }).id;
 
   await db.asAdmin((query) => query(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'owner')`, [orgId, LEAVER]));

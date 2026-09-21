@@ -30,9 +30,17 @@ export interface FinancialHealthInput {
   /** Total annualized cost of detected recurring payments (rent,
    *  subscriptions, etc.) — see src/domain/insights/recurring-detection. */
   recurringAnnualCostMinor: number;
-  /** Only meaningful for freelancer/business entities; pass 0/0 for personal. */
+  /** Money owed to the workspace on invoices. Only meaningful while
+   *  invoicing is part of the product; see `includeReceivables`. */
   overdueReceivablesMinor: number;
   totalReceivablesMinor: number;
+  /**
+   * Whether the receivables factor is scored at all. Default true. Off at the
+   * personal-only launch (src/domain/organizations/launch-scope.ts): a person
+   * issues no invoices, and a factor that always scores a neutral 100 would
+   * quietly inflate every score. The remaining weights are renormalised.
+   */
+  includeReceivables?: boolean;
 }
 
 export interface FinancialHealthResult {
@@ -163,10 +171,12 @@ export function calculateFinancialHealth(input: FinancialHealthInput): Financial
         : `${Math.round(overdueRatio * 100)}% of what you're owed is overdue.`,
   };
 
-  const factors = [cashRunwayFactor, savingsRateFactor, spendingStabilityFactor, recurringLoadFactor, receivablesFactor];
+  const factors = [cashRunwayFactor, savingsRateFactor, spendingStabilityFactor, recurringLoadFactor];
+  if (input.includeReceivables !== false) factors.push(receivablesFactor);
 
+  const totalWeight = factors.reduce((sum, f) => sum + WEIGHTS[f.key], 0);
   const overallScore = clampScore(
-    factors.reduce((sum, f) => sum + f.score * WEIGHTS[f.key], 0),
+    factors.reduce((sum, f) => sum + f.score * WEIGHTS[f.key], 0) / totalWeight,
   );
 
   return {

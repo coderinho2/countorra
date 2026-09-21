@@ -9,7 +9,7 @@ import Faqs01 from "@/components/ui/faqs-01";
 
 export const metadata: Metadata = {
   title: "Help Centre",
-  description: "How Countorra works: accounts, transactions, invoices, reports, Ask Countorra, bank connections, tax preparation, security and billing.",
+  description: "How Countorra works: accounts, transactions, reports, Ask Countorra, bank connections, personal tax preparation, security and billing.",
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");

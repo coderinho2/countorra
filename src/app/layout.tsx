@@ -53,7 +53,7 @@ export const metadata: Metadata = {
     template: "%s — Countorra",
   },
   description:
-    "A premium financial intelligence and accounting platform for individuals, freelancers, and businesses. Ask real questions about your money, answered from your own records.",
+    "An AI-powered personal finance and personal tax platform. Ask real questions about your money, answered from your own records.",
   applicationName: "Countorra",
   alternates: { canonical: "/" },
   openGraph: {
@@ -62,13 +62,13 @@ export const metadata: Metadata = {
     url: "/",
     title: "Countorra — Financial intelligence for your own records",
     description:
-      "One system for income, expenses, accounts and invoices — that answers real questions about them, grounded in your own records.",
+      "One system for your income, spending, accounts and taxes — that answers real questions about them, grounded in your own records.",
   },
   twitter: {
     card: "summary_large_image",
     title: "Countorra",
     description:
-      "One system for income, expenses, accounts and invoices — that answers real questions about them, grounded in your own records.",
+      "One system for your income, spending, accounts and taxes — that answers real questions about them, grounded in your own records.",
   },
   // No image is referenced because none exists. Pointing at a missing file
   // produces a broken card, which is worse than the text-only one a crawler

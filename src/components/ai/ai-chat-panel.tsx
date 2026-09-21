@@ -10,7 +10,6 @@ import { AiActionConfirmation } from "./ai-action-confirmation";
 import { AiResultPanel } from "./ai-result-panel";
 import { AiUpgradePrompt } from "./ai-upgrade-prompt";
 import { sendAiMessage, type PendingActionSummary, type ToolResultSummary } from "@/server/ai/actions";
-import type { UserEntityType } from "@/domain/organizations/types";
 import type { PlanTier } from "@/types/database";
 
 export interface Turn {
@@ -25,29 +24,21 @@ export interface Turn {
 }
 
 /**
- * Product spec §3 — real, entity-specific examples, not generic filler.
+ * Product spec §3 — real examples, not generic filler. Personal only: Countorra
+ * launches for personal finances and personal taxes
+ * (src/domain/organizations/launch-scope.ts); the freelancer and business
+ * sets are gone with those entity types.
  * Selecting one runs it against the real system exactly like typing it.
  *
  * Grouped, because five ungrouped example questions read as filler while the
  * same five under "Position", "Money owed" and "Patterns" read as a map of
  * what the assistant is actually able to answer.
  */
-const SUGGESTED_QUESTIONS: Record<UserEntityType, { group: string; questions: string[] }[]> = {
-  personal: [
-    { group: "Position", questions: ["How much did I spend this month?", "Can I afford a $2,000 purchase?"] },
-    { group: "Patterns", questions: ["What were my biggest expenses?", "Why did my spending increase?", "Show me my subscriptions."] },
-  ],
-  freelancer: [
-    { group: "Position", questions: ["How much did I earn this month?", "What was my profit this quarter?"] },
-    { group: "Money owed", questions: ["Which clients haven't paid me?"] },
-    { group: "Patterns", questions: ["What expenses increased?", "What should I review before tax time?"] },
-  ],
-  business: [
-    { group: "Position", questions: ["How has cash flow changed?", "What are our largest expense categories?"] },
-    { group: "Money owed", questions: ["Show me our overdue invoices."] },
-    { group: "Patterns", questions: ["Why did operating expenses increase this quarter?", "What should I review this month?"] },
-  ],
-};
+export const SUGGESTED_QUESTIONS: { group: string; questions: string[] }[] = [
+  { group: "Position", questions: ["How much did I spend this month?", "Can I afford a $2,000 purchase?"] },
+  { group: "Patterns", questions: ["What were my biggest expenses?", "Why did my spending increase?", "Show me my subscriptions."] },
+  { group: "Taxes", questions: ["What's still missing from my tax preparation?"] },
+];
 
 /**
  * The transcript and the composer.
@@ -69,19 +60,17 @@ const SUGGESTED_QUESTIONS: Record<UserEntityType, { group: string; questions: st
  */
 export function AiChatPanel({
   organizationId,
-  entityType,
   initialConversationId,
   initialMessages,
   onConversationCreated,
   grounding,
 }: {
   organizationId: string;
-  entityType: UserEntityType;
   initialConversationId: string | null;
   initialMessages: Turn[];
   onConversationCreated: (id: string, title: string) => void;
   /** What the assistant can see. Real counts, read on the server. */
-  grounding?: { transactions: number; invoices: number; accounts: number; through: string };
+  grounding?: { transactions: number; documents: number; accounts: number; through: string };
 }) {
   const [turns, setTurns] = useState<Turn[]>(initialMessages);
   const [conversationId, setConversationId] = useState(initialConversationId);
@@ -139,8 +128,8 @@ export function AiChatPanel({
             <span className="text-text-secondary">{grounding.transactions.toLocaleString("en-US")}</span>
           </span>
           <span className="border-border-subtle flex items-center gap-1.5 border-r px-3">
-            <span className="uppercase opacity-70">Inv</span>
-            <span className="text-text-secondary">{grounding.invoices.toLocaleString("en-US")}</span>
+            <span className="uppercase opacity-70">Docs</span>
+            <span className="text-text-secondary">{grounding.documents.toLocaleString("en-US")}</span>
           </span>
           <span className="border-border-subtle flex items-center gap-1.5 border-r px-3">
             <span className="uppercase opacity-70">Acct</span>
@@ -159,13 +148,13 @@ export function AiChatPanel({
               <p className="font-numeric text-text-tertiary text-[11px] tracking-[0.14em] uppercase">Intelligence console</p>
               <h1 className="text-ink text-[32px] leading-10 font-semibold tracking-[-0.015em] sm:text-[40px] sm:leading-[48px]">Ask your money</h1>
               <p className="text-text-secondary max-w-[60ch] text-[15px]">
-                Every answer is computed from the transactions, invoices and accounts in this workspace. Nothing is estimated, and nothing is invented.
+                Every answer is computed from the transactions, accounts and documents in this workspace. Nothing is estimated, and nothing is invented.
               </p>
             </div>
 
             <div className="grid gap-8 sm:grid-cols-[1fr_auto] sm:gap-12">
               <div className="section-enter flex flex-col gap-6" style={{ "--enter-index": 1 } as React.CSSProperties}>
-                {SUGGESTED_QUESTIONS[entityType].map((section, groupIndex) => (
+                {SUGGESTED_QUESTIONS.map((section, groupIndex) => (
                   <div key={section.group} className="flex flex-col gap-2">
                     <p className="font-numeric text-text-tertiary mb-1 flex items-center gap-2 border-b border-border pb-2 text-[10px] tracking-[0.14em] uppercase">
                       <span className="tabular-nums">{String(groupIndex + 1).padStart(2, "0")}</span>

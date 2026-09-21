@@ -1,10 +1,13 @@
 import { z } from "zod";
-import { USER_ENTITY_TYPES } from "@/domain/organizations/types";
+import { LAUNCH_ENTITY_TYPE, LAUNCH_ENTITY_TYPES, PERSONAL_ONLY_MESSAGE } from "@/domain/organizations/launch-scope";
 import { currencySchema } from "./money";
 
 export const createOrganizationSchema = z.object({
   name: z.string().min(1, "Name is required.").max(200),
-  entityType: z.enum(USER_ENTITY_TYPES as [string, ...string[]]),
+  // Personal only at launch (src/domain/organizations/launch-scope.ts). Not
+  // asked for any more — it defaults — but a request that names another
+  // type is refused rather than silently turned into a personal workspace.
+  entityType: z.enum(LAUNCH_ENTITY_TYPES, { error: PERSONAL_ONLY_MESSAGE }).default(LAUNCH_ENTITY_TYPE),
   country: z
     .string()
     .length(2)

@@ -58,8 +58,8 @@ const EXAMPLES: Example[] = [
     metrics: [{ value: "$45,900.00", label: "Projected balance, Dec 21", positive: true }],
   },
   {
-    question: "Which invoices are overdue?",
-    answer: "Two invoices are overdue — INV-1042 for $2,400 (18 days) and INV-1039 for $860 (6 days).",
+    question: "What's still missing from my taxes?",
+    answer: "One figure: federal withholding from your W-2 is suggested but not yet confirmed. Once you confirm it on Tax preparation, the 2026 estimate can be calculated.",
   },
 ];
 

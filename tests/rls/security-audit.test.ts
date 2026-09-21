@@ -35,14 +35,14 @@ beforeEach(async () => {
 
   await db.asUser(owner);
   orgA = row<{ id: string }>(
-    (await db.query(`insert into organizations (name, entity_type, created_by) values ('Org A', 'business', $1) returning id`, [owner])).rows,
+    (await db.query(`insert into organizations (name, entity_type, created_by) values ('Org A', 'personal', $1) returning id`, [owner])).rows,
   ).id;
   await db.query(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'admin')`, [orgA, adminUser]);
   await db.query(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'viewer')`, [orgA, viewer]);
 
   await db.asUser(outsider);
   orgB = row<{ id: string }>(
-    (await db.query(`insert into organizations (name, entity_type, created_by) values ('Org B', 'business', $1) returning id`, [outsider])).rows,
+    (await db.query(`insert into organizations (name, entity_type, created_by) values ('Org B', 'personal', $1) returning id`, [outsider])).rows,
   ).id;
 });
 

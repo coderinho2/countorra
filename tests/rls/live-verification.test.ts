@@ -31,12 +31,12 @@ beforeEach(async () => {
 
   await db.asUser(owner);
   orgA = row<{ id: string }>(
-    (await db.query(`insert into organizations (name, entity_type, created_by) values ('Org A', 'business', $1) returning id`, [owner])).rows,
+    (await db.query(`insert into organizations (name, entity_type, created_by) values ('Org A', 'personal', $1) returning id`, [owner])).rows,
   ).id;
 
   await db.asUser(other);
   orgB = row<{ id: string }>(
-    (await db.query(`insert into organizations (name, entity_type, created_by) values ('Org B', 'business', $1) returning id`, [other])).rows,
+    (await db.query(`insert into organizations (name, entity_type, created_by) values ('Org B', 'personal', $1) returning id`, [other])).rows,
   ).id;
 });
 

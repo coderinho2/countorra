@@ -98,33 +98,24 @@ test("the bank webhook endpoint is not an open door: a forged delivery is refuse
   if (plaid.status() === 400) expect(await plaid.json()).toEqual({ error: "unverified" });
 });
 
-test("onboarding: selecting an entity type reveals a form with US-first defaults", async ({ page }) => {
+test("onboarding is one personal step with US-first defaults — no workspace type to choose", async ({ page }) => {
   await page.goto("/onboarding");
-  await expect(page.getByRole("heading", { name: "What are you using Countorra for?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Set up your finances" })).toBeVisible();
+  await expect(page.getByText("Your personal workspace")).toBeVisible();
 
-  await page.getByRole("radio", { name: /Business/ }).click();
-  await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByLabel("Business name")).toBeVisible();
-
+  await expect(page.getByLabel("What should we call it?")).toBeVisible();
   await expect(page.getByLabel("Country")).toHaveValue("US");
   await expect(page.getByLabel("Currency")).toHaveValue("USD");
-
-  await page.getByRole("button", { name: "Back" }).click();
-  await expect(page.getByRole("heading", { name: "What are you using Countorra for?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create my workspace" })).toBeVisible();
 });
 
-test("onboarding: entity type radiogroup is keyboard-navigable and only one option is checked at a time", async ({ page }) => {
+test("onboarding never offers Freelancer or Business, and sends no entity type", async ({ page }) => {
   await page.goto("/onboarding");
-  const personal = page.getByRole("radio", { name: /Personal/ });
-  const freelancer = page.getByRole("radio", { name: /Freelancer/ });
-
-  await personal.click();
-  await expect(personal).toHaveAttribute("aria-checked", "true");
-  await expect(freelancer).toHaveAttribute("aria-checked", "false");
-
-  await personal.press("ArrowDown");
-  await expect(freelancer).toHaveAttribute("aria-checked", "true");
-  await expect(personal).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("radiogroup")).toHaveCount(0);
+  await expect(page.getByRole("radio")).toHaveCount(0);
+  await expect(page.getByText(/Freelancer|Business name|What are you using Countorra for/)).toHaveCount(0);
+  // The server sets the workspace type; the form does not carry one.
+  await expect(page.locator('input[name="entityType"]')).toHaveCount(0);
 });
 
 test("legal pages render real content, not dead links", async ({ page }) => {
@@ -142,8 +133,10 @@ test("pricing page shows all three plans with real, enforced AI usage limits", a
   await page.goto("/pricing");
   await expect(page.getByRole("heading", { name: "One financial system. Priced by how far you take it." })).toBeVisible();
   await expect(page.getByText("For getting started, and for seeing your own numbers clearly.")).toBeVisible();
-  await expect(page.getByText("For individuals and freelancers who need deeper financial intelligence.")).toBeVisible();
-  await expect(page.getByText("For organizations that need business workflows and collaboration.")).toBeVisible();
+  await expect(page.getByText("For people who want bank connections and deeper financial intelligence.")).toBeVisible();
+  // "Business" is the subscription tier, and stays; it is not a workspace type.
+  await expect(page.getByText("For households and heavy users who need more workspaces and more AI.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Business", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Ask Countorra grows with your plan." })).toBeVisible();
 
   // The three published allowances, which are the same values the server
@@ -251,10 +244,7 @@ test("authenticated app navigation is discoverable and correctly linked from the
 test("public nav marks the current section on every public route", async ({ page }) => {
   const cases: { route: string; expected: string }[] = [
     { route: "/product", expected: "Product" },
-    { route: "/solutions", expected: "Solutions" },
-    { route: "/solutions/personal", expected: "Solutions" },
-    { route: "/solutions/freelancer", expected: "Solutions" },
-    { route: "/solutions/business", expected: "Solutions" },
+    { route: "/solutions/personal", expected: "Personal finance" },
     { route: "/resources", expected: "Resources" },
     { route: "/pricing", expected: "Pricing" },
     { route: "/security", expected: "Security" },
@@ -278,12 +268,12 @@ test("public nav marks nothing active on routes that have no nav item", async ({
 
 test("mobile nav marks the current section too", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto("/solutions/business");
+  await page.goto("/resources");
   await page.getByRole("button", { name: "Open menu" }).click();
 
   const panel = page.locator("#mobile-nav-panel");
   await expect(panel.locator('[aria-current="page"]')).toHaveCount(1);
-  await expect(panel.locator('[aria-current="page"]')).toHaveText("Solutions");
+  await expect(panel.locator('[aria-current="page"]')).toHaveText("Resources");
 });
 
 /**
@@ -293,7 +283,7 @@ test("mobile nav marks the current section too", async ({ page }) => {
  * not asserted here; see the note at the top of this file.
  */
 test("signed-out visitors are offered both Sign in and Get started, on every public surface", async ({ page }) => {
-  for (const route of ["/", "/pricing", "/solutions/freelancer"]) {
+  for (const route of ["/", "/pricing", "/solutions/personal"]) {
     await page.goto(route);
     const header = page.locator("header");
     await expect(header.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
@@ -311,3 +301,28 @@ test("signed-out: Get started reaches signup and Sign in reaches login", async (
   await page.locator("header").getByRole("link", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/login/);
 });
+
+/**
+ * Personal-only launch (src/domain/organizations/launch-scope.ts): the
+ * Freelancer and Business pages are retired, and every old link lands on the
+ * personal page rather than a 404.
+ */
+test("retired Solutions routes redirect permanently to the personal page", async ({ request }) => {
+  for (const route of ["/solutions", "/solutions/freelancer", "/solutions/business"]) {
+    const response = await request.get(route, { maxRedirects: 0 });
+    expect(response.status(), route).toBe(308);
+    expect(response.headers()["location"], route).toBe("/solutions/personal");
+  }
+});
+
+test("public site presents one audience: no Personal / Freelancer / Business switcher, no Solutions menu", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Freelancer" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Business" })).toHaveCount(0);
+  await expect(page.getByText(/freelance income, or a business/)).toHaveCount(0);
+
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  await expect(nav.getByRole("link", { name: "Personal finance" })).toHaveAttribute("href", "/solutions/personal");
+  await expect(nav.getByRole("link", { name: /^Solutions/ })).toHaveCount(0);
+});
+

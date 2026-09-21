@@ -13,11 +13,13 @@ export interface OnboardingActionResult {
 }
 
 /**
- * Progressive onboarding (product spec §23): collects only entity type +
- * name + country/currency, nothing else — no giant form, no tax/legal
- * detail up front. The organizations.entity_type value chosen here is
- * what src/app/app/[orgId]/layout.tsx reads to decide which navigation
- * items and dashboard layout to show (product spec §24–§26).
+ * Progressive onboarding (product spec §23): collects only a name and
+ * country/currency — no giant form, no tax/legal detail up front.
+ *
+ * Every workspace is personal at launch (src/domain/organizations/launch-
+ * scope.ts). The entity type is no longer asked for: the schema defaults it
+ * to `personal`, and refuses a request that names anything else. The
+ * database refuses it too (supabase/migrations/0051_personal_launch_scope.sql).
  *
  * This is also the ONLY path that creates an organization, which makes it
  * the only place the plan's organization allowance can be enforced. It was
@@ -33,7 +35,7 @@ export async function completeOnboarding(_prev: OnboardingActionResult, formData
 
   const parsed = createOrganizationSchema.safeParse({
     name: formData.get("name"),
-    entityType: formData.get("entityType"),
+    entityType: formData.get("entityType") || undefined,
     country: formData.get("country") || undefined,
     baseCurrency: formData.get("baseCurrency") || undefined,
   });
@@ -55,7 +57,7 @@ export async function completeOnboarding(_prev: OnboardingActionResult, formData
 
   const organization = await createOrganization(client, {
     name: parsed.data.name,
-    entityType: parsed.data.entityType as "personal" | "freelancer" | "business",
+    entityType: parsed.data.entityType,
     country: parsed.data.country,
     baseCurrency: parsed.data.baseCurrency,
     createdBy: user.id,

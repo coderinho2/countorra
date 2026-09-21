@@ -16,9 +16,9 @@ const STEPS = [
 ];
 
 const FIELDS = [
-  { label: "Vendor", value: "CloudHost Inc.", confirmed: true },
-  { label: "Invoice date", value: "Nov 19, 2026", confirmed: true },
-  { label: "Amount", value: "$89.00", confirmed: false },
+  { label: "Employer", value: "Northwind Co.", confirmed: true },
+  { label: "Wages (box 1)", value: "$86,400.00", confirmed: true },
+  { label: "Federal withholding (box 2)", value: "$9,120.00", confirmed: false },
 ];
 
 /**
@@ -54,7 +54,7 @@ export function DocumentsFlow() {
       <div className="mx-auto mt-8 max-w-md rounded-md border border-border-subtle bg-surface p-5">
         <div className="flex items-baseline justify-between border-b border-border-subtle pb-3">
           <div>
-            <p className="text-[14px] font-semibold text-ink">cloudhost-nov-invoice.pdf</p>
+            <p className="text-[14px] font-semibold text-ink">w2-2026-northwind.pdf</p>
             <p className="text-[12px] text-text-tertiary">Uploaded to Documents</p>
           </div>
           <Badge variant="warning">Needs review</Badge>

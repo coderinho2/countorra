@@ -36,7 +36,7 @@ describe("search", () => {
     ["does it file my taxes", "tax-filing"],
     ["new york state tax", "supported-jurisdictions"],
     ["forecast", "forecasts"],
-    ["invoice reminder", "invoices"],
+    ["savings rate", "reports"],
   ])("finds %j", (query, anchor) => {
     expect(searchHelp(query).map((result) => result.anchor).slice(0, 3)).toContain(anchor);
   });
@@ -190,3 +190,30 @@ describe("ranking", () => {
     expect(searchHelp("tax")[0]?.anchor).not.toBe("financial-reports-and-tax");
   });
 });
+
+describe("personal-only launch scope", () => {
+  it("has no articles for the deferred invoicing module", () => {
+    const ids = articles.map((article) => article.id);
+    expect(ids).not.toContain("invoices");
+    expect(ids).not.toContain("customers");
+  });
+
+  it("answers someone searching for freelancer or business support with the personal workspace", () => {
+    expect(searchHelp("freelancer").map((r) => r.anchor).slice(0, 2)).toContain("your-personal-workspace");
+    expect(searchHelp("business workspace").map((r) => r.anchor).slice(0, 3)).toContain("your-personal-workspace");
+  });
+
+  it("says Countorra is for individuals", () => {
+    const faq = HELP_FAQS.find((f) => f.id === "individuals-or-businesses")!;
+    expect(faq.answer[0]).toMatch(/^Individuals\./);
+    expect(faq.answer.join(" ")).toMatch(/not part of Countorra yet/);
+  });
+
+  it("never offers a workspace type to choose, or invoicing as something the assistant does", () => {
+    expect(allText).not.toMatch(/Choose Personal, Freelancer or Business/);
+    expect(allText).not.toMatch(/draft(ing)? an invoice/i);
+    const assistant = HELP_FAQS.find((f) => f.id === "what-can-ask-countorra-do")!;
+    expect(assistant.points!.join(" ")).not.toMatch(/invoice|customer/i);
+  });
+});
+

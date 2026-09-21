@@ -8,10 +8,9 @@ import { Plus } from "@phosphor-icons/react/dist/ssr/Plus";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+// Personal only at launch; the layout passes every workspace as personal.
 const ENTITY_LABEL: Record<string, string> = {
   personal: "Personal finances",
-  freelancer: "Freelance workspace",
-  business: "Business",
 };
 
 export interface WorkspaceOption {
