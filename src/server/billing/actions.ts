@@ -103,6 +103,9 @@ export async function createCheckoutSession(input: { organizationId: string; pla
     return { error: "Use Manage billing to move to a different plan." };
   }
 
+  // Which call is in flight, so a failure can be attributed without logging
+  // the (redacted) message. Updated before each await below.
+  let call = "ensure_customer";
   try {
     const customerId = await ensureStripeCustomer({
       organizationId: input.organizationId,
@@ -111,6 +114,7 @@ export async function createCheckoutSession(input: { organizationId: string; pla
       existingCustomerId: subscription?.stripeCustomerId ?? null,
     });
 
+    call = "checkout_sessions_create";
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
@@ -129,6 +133,7 @@ export async function createCheckoutSession(input: { organizationId: string; pla
 
     if (!session.url) throw new Error("Stripe returned a session with no URL");
 
+    call = "deletion_lock_recheck";
     // A deletion may have started — or finished — between the check above
     // and this session existing. Deletion expires the open sessions it can
     // see; this closes the one it could not have seen yet. Read with the
@@ -143,6 +148,7 @@ export async function createCheckoutSession(input: { organizationId: string; pla
       return { error: DELETION_IN_PROGRESS };
     }
 
+    call = "audit_event";
     await recordAuditEvent(client, {
       organizationId: input.organizationId,
       action: AUDIT_ACTIONS.billingCheckoutStarted,
@@ -152,9 +158,38 @@ export async function createCheckoutSession(input: { organizationId: string; pla
 
     return { url: session.url };
   } catch (error) {
-    reportError(error, { scope: "billing", organizationId: input.organizationId, userId: user.id, detail: { step: "create_checkout_session" } });
+    reportError(error, {
+      scope: "billing",
+      organizationId: input.organizationId,
+      userId: user.id,
+      detail: { step: "create_checkout_session", call, plan: input.plan, ...stripeErrorFields(error) },
+    });
     return { error: GENERIC_FAILURE };
   }
+}
+
+/**
+ * The structured, non-sensitive part of a Stripe SDK error.
+ *
+ * `observability.describe()` deliberately drops any error message over 200
+ * characters, and Stripe's most actionable messages (a restricted key missing
+ * a permission, a customer that exists only in the other mode) are longer than
+ * that — so without this the log says only "Error / [redacted]". None of these
+ * fields carries a key, an id of a customer, or a message: `type` and `code`
+ * are enum-like, `param` names the offending request field ("customer",
+ * "line_items[0][price]"), and `requestId` lets Stripe's own log be found.
+ */
+function stripeErrorFields(error: unknown): Record<string, string | number> {
+  if (typeof error !== "object" || error === null) return {};
+  const e = error as { type?: unknown; code?: unknown; statusCode?: unknown; param?: unknown; requestId?: unknown };
+  if (typeof e.type !== "string" || !e.type.startsWith("Stripe")) return {};
+
+  const fields: Record<string, string | number> = { stripeType: e.type };
+  if (typeof e.code === "string") fields.stripeCode = e.code.slice(0, 80);
+  if (typeof e.statusCode === "number") fields.stripeStatus = e.statusCode;
+  if (typeof e.param === "string") fields.stripeParam = e.param.slice(0, 80);
+  if (typeof e.requestId === "string") fields.stripeRequestId = e.requestId.slice(0, 80);
+  return fields;
 }
 
 /**
