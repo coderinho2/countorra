@@ -96,7 +96,7 @@ describe("readiness", () => {
   it("gives operators the breakdown — booleans and versions, never a secret", async () => {
     const body = await (await ready(req("/api/health/ready", TOKEN))).json();
     expect(body.checks.database.ok).toBe(true);
-    expect(body.checks.schema).toEqual({ ok: true, expected: "0053", actual: "0053" });
+    expect(body.checks.schema).toEqual({ ok: true, expected: "0054", actual: "0054" });
     expect(body.integrations).toEqual({ stripe: true, plaid: false, email: false, bankWorkerCron: true, operationsToken: true });
     expect(JSON.stringify(body)).not.toContain(TOKEN);
     expect(JSON.stringify(body)).not.toContain("service-role-secret");

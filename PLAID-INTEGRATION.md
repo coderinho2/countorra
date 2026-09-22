@@ -167,7 +167,9 @@ existing items, through Plaid's `/item/webhook/update`.
 ```
 claim job (RUNNING + run row, one transaction)
   → credential from the secret store
-  → page from Plaid  → validate → normalize → ingest + advance cursor (atomic)
+  → page from Plaid (+ the account list and balances on the run's first page)
+  → validate → normalize → ingest + advance cursor (atomic)
+  → import new supported accounts as Countorra accounts (0054)
   → reconcile changed rows in bounded batches
   → … up to MAX_PAGES_PER_RUN (20), then a CONTINUATION job
   → complete run + job → connection status from the lifecycle rules
@@ -180,8 +182,10 @@ claim job (RUNNING + run row, one transaction)
   (`plaidAmountToDecimal`), then integer minor units through
   `src/domain/money`. Positive means money left the account → DEBIT → expense.
 * Credit and loan balances have their sign flipped, because Plaid reports what
-  is owed as positive. Those figures are display-only; Countorra's balances are
-  always derived from the ledger.
+  is owed as positive.
+* **Accounts and balances are read on the first page of every run.** (Before
+  0054 they were read only when the cursor was empty — once per connection —
+  so balances never refreshed and accounts opened later never appeared.)
 * Pending transactions never enter the ledger. The posted transaction that
   replaces one — same id, or a new id with `pending_transaction_id` — is what
   gets imported, so pending → posted cannot produce two ledger rows.
@@ -195,6 +199,52 @@ claim job (RUNNING + run row, one transaction)
 * Without that secret configured the endpoint answers 404 and nothing imports
   automatically — links, manual refreshes and webhook verification still work,
   but a webhook's queued job waits.
+
+### Account import and balances (0054)
+
+**Which accounts become Countorra accounts.** One mapping, in the database
+(`bank_import_account_kind`) and mirrored in
+`src/domain/bank-connections/account-import.ts`:
+
+| Plaid type / subtype | Countorra account |
+| --- | --- |
+| depository / checking, savings | `bank` |
+| credit / credit card | `credit_card` |
+| everything else — loans, investment, money market, CD, HSA, prepaid, PayPal, no subtype | **not imported**; shown on Bank connections as "not supported yet", and refused by the manual link flow |
+
+**When.** Inside the sync, after a page's accounts are stored and before its
+transactions are reconciled, so the first sync fills the ledger. It is
+automatic unless the workspace already has an unconnected account of that kind
+and currency kept by hand — then the bank account waits and the person
+chooses **Continue ‹their account›** (the existing link flow, which matches
+their entries instead of importing them twice) or **Import as a new account**.
+Nothing already linked, ignored or detached is touched, so re-running creates
+nothing.
+
+**Balances.** For an account Countorra created, the bank's current balance is
+the authority for what it holds and the imported transactions for what
+happened. At the end of every complete run (no page left, no posted
+transaction still waiting for the ledger) the opening balance is set to
+
+    bank current balance − Σ ledger movements in the account
+
+so the Countorra balance equals the bank's exactly — including when Plaid
+delivers older history after the first sync (the history lands, the opening
+shrinks by the same amount). It is never a transaction, never touches a
+transaction row, and never applies to an account a person kept by hand and
+then connected. Pending transactions are in neither the ledger nor this
+arithmetic's result beyond what the bank's own current balance includes.
+
+**Provider data versus Countorra's.** On a bank-imported transaction the
+amount, date, direction, currency and account are the bank's: a browser
+session cannot change them or delete the row (0054); the sync applies Plaid's
+corrections and removals. Category, merchant, memo, the name shown and review
+state are Countorra's and stay editable.
+
+**Known gap.** A credit card payment from a connected checking account
+arrives as an outflow on checking and an inflow on the card, and is recorded as
+an expense and an income. Transfer detection between connected accounts is not
+implemented yet, so card payments inflate both spending and income.
 
 ## 8. Retries
 
@@ -222,6 +272,17 @@ checked first: no plan can conjure a provider, and a configured provider does
 not grant a Free workspace the feature. The UI states whichever is true.
 
 ## 10. Testing
+
+**Live sandbox run** (real Plaid sandbox API, real Countorra pipeline, local
+Postgres with every migration — the production database is never touched):
+
+```bash
+PLAID_SANDBOX_LIVE=1 npx vitest run tests/plaid-sandbox
+```
+
+Opt-in only; refuses anything but `PLAID_ENV=sandbox`; removes its items at
+the end; writes counts-only evidence to `test-results/plaid-sandbox-summary.json`.
+
 
 | Suite | What it covers |
 |---|---|

@@ -607,6 +607,11 @@ Rules:
   **first**, then push 0053: the new code works against the old schema
   (readiness shows the schema behind until the push), while the old code
   against the new schema would show people refusals.
+* **0054 (Plaid account import)** is the usual direction again: push 0054
+  **first**, then deploy. The new sync calls `bank_auto_import_accounts` and
+  `bank_anchor_account_balances`, which do not exist before 0054 — every sync
+  would fail. The previous build runs unchanged against 0054. Readiness
+  reports `schema.ok: false` until both are in place.
 * For Preview's separate project, push the same migrations there.
 
 ---

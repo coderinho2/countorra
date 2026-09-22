@@ -16,6 +16,7 @@ import type { ConnectionStatus, SyncFailureCategory } from "@/domain/bank-connec
 import { reportError, reportEvent } from "@/lib/observability";
 import type { LinkOutcome, ReconcileOutcome } from "./store";
 import { applyConnectionEvent, reconcileConnection, runBankSyncJob, type SyncDependencies, type SyncRunOutcome } from "./sync";
+import { importedAccountKind } from "@/domain/bank-connections/account-import";
 
 /**
  * Bank-connection operations, provider-independent and session-free.
@@ -71,6 +72,8 @@ export async function createBankLinkSession(
   const outcome = await runBankProviderCall(
     (signal) => availability.provider.createLinkSession({ organizationId: input.organizationId, userId: input.userId, reauthSecret, signal }),
     providerLinkSessionSchema,
+    undefined,
+    reauthSecret ? "create_update_link_token" : "create_link_token",
   );
   if (!outcome.ok) return { kind: "provider_failed", category: outcome.category };
   return { kind: "created", linkToken: outcome.value.linkToken, expiresAt: outcome.value.expiresAt, mode: reauthSecret ? "reauthenticate" : "connect" };
@@ -102,7 +105,7 @@ export async function completeBankLink(deps: ServiceDependencies, input: { organ
   if (!deps.secrets) return { kind: "secret_store_unavailable" };
   const { provider } = availability;
 
-  const exchanged = await runBankProviderCall((signal) => provider.completeLink({ publicToken: input.publicToken, signal }), providerCompletedLinkSchema);
+  const exchanged = await runBankProviderCall((signal) => provider.completeLink({ publicToken: input.publicToken, signal }), providerCompletedLinkSchema, undefined, "exchange_public_token");
   if (!exchanged.ok) return { kind: "provider_failed", category: exchanged.category };
   const link = exchanged.value;
 
@@ -177,7 +180,7 @@ export async function completeBankReauth(deps: ServiceDependencies, input: { org
   const secret = reference && deps.secrets ? await deps.secrets.get(reference).catch(() => null) : null;
   if (!secret) return { kind: "credential_unavailable" };
 
-  const inspected = await runBankProviderCall((signal) => availability.provider.inspectConnection({ secret, signal }), providerConnectionStateSchema);
+  const inspected = await runBankProviderCall((signal) => availability.provider.inspectConnection({ secret, signal }), providerConnectionStateSchema, undefined, "inspect_item");
   if (!inspected.ok) return { kind: "provider_failed", category: inspected.category };
 
   if (inspected.value.health === "REQUIRES_REAUTH") return { kind: "still_requires_reauth" };
@@ -204,7 +207,7 @@ export async function completeBankReauth(deps: ServiceDependencies, input: { org
 }
 
 async function bestEffortRevoke(provider: BankConnectionProvider, secret: ProviderSecret): Promise<boolean> {
-  const outcome = await runBankProviderCall((signal) => provider.revoke({ secret, signal }), z.unknown());
+  const outcome = await runBankProviderCall((signal) => provider.revoke({ secret, signal }), z.unknown(), undefined, "remove_item");
   return outcome.ok;
 }
 
@@ -351,11 +354,43 @@ export async function linkExternalAccount(
 ): Promise<LinkAccountResult> {
   const linked = await deps.store.getLinkedAccount(input.organizationId, input.linkedAccountId);
   if (!linked) return { kind: "refused", reason: "NOT_FOUND" };
+  // Plaid-first (0054): a bank account is imported only as the kind it is,
+  // and only if that kind is supported. A person may still point one at an
+  // account they kept by hand before connecting — of the same kind — so that
+  // history carries over; never at a cash account, never a loan at anything.
+  if (input.importMode === "IMPORT") {
+    const expected = importedAccountKind(linked.accountType, linked.accountSubtype);
+    if (!expected) return { kind: "refused", reason: "UNSUPPORTED_ACCOUNT_TYPE" };
+    if (input.accountId) {
+      const kind = await deps.store.getAccountKind(input.organizationId, input.accountId);
+      if (kind === null) return { kind: "refused", reason: "NOT_FOUND" };
+      if (kind !== expected) return { kind: "refused", reason: "ACCOUNT_KIND_MISMATCH" };
+    }
+  }
   const outcome = await deps.store.linkAccount({ organizationId: input.organizationId, linkedAccountId: linked.id, accountId: input.importMode === "IMPORT" ? input.accountId : null, importMode: input.importMode, actorId: input.actorId });
   if (outcome !== "APPLIED") return { kind: "refused", reason: outcome };
 
   // What was waiting on this decision is reconciled now — no provider call
   // is needed for that, only the rows already recorded.
+  const counts = await reconcileConnection(deps, { organizationId: input.organizationId, connectionId: linked.connectionId, runId: null, budget: { remaining: 1_000 } });
+  return { kind: "applied", reconciled: counts.reconciled };
+}
+
+/**
+ * "Import as a new account": the person's choice when the workspace already
+ * has an account of that kind they kept by hand, and this bank account is a
+ * different one. Creates the Countorra account from the bank account and
+ * reconciles what was waiting on it — the same path the automatic import
+ * takes (bank_import_linked_account, 0054).
+ */
+export async function importExternalAccountAsNew(
+  deps: Pick<ServiceDependencies, "store">,
+  input: { organizationId: string; linkedAccountId: string; actorId: string },
+): Promise<LinkAccountResult> {
+  const linked = await deps.store.getLinkedAccount(input.organizationId, input.linkedAccountId);
+  if (!linked) return { kind: "refused", reason: "NOT_FOUND" };
+  const outcome = await deps.store.importLinkedAccount({ organizationId: input.organizationId, linkedAccountId: linked.id, actorId: input.actorId });
+  if (outcome !== "APPLIED") return { kind: "refused", reason: outcome };
   const counts = await reconcileConnection(deps, { organizationId: input.organizationId, connectionId: linked.connectionId, runId: null, budget: { remaining: 1_000 } });
   return { kind: "applied", reconciled: counts.reconciled };
 }

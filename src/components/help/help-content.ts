@@ -245,10 +245,12 @@ export const HELP_CATEGORIES: HelpCategory[] = [
       {
         id: "connecting-a-bank",
         title: "Connecting a bank through Plaid",
-        summary: "On Premium and Business, connect a bank to import its transactions into an account you choose.",
+        summary: "On Premium and Business, connect a bank and its checking, savings and credit card accounts arrive in Countorra with their transactions.",
         body: [
           "Bank connections are part of the Premium and Business plans. Choose Connect a bank and Plaid opens: you pick your bank and sign in there. Countorra never sees or stores your bank username or password.",
-          "When the connection is made, you choose which Countorra account each bank account feeds. If bank connections are not available on your plan, or not switched on for the service, the Bank connections page says so — you can always record accounts and transactions by hand instead.",
+          "When the connection is made, Countorra creates an account for each checking, savings and credit card account at that bank, brings in its posted transactions, and keeps its balance equal to what your bank reports. Pending transactions appear once they post, never twice.",
+          "Loans, investment and retirement accounts, and other account types are listed but not imported yet. If you already kept an account by hand, Countorra asks whether to continue it — matching your entries instead of adding them twice — or import the bank account as a new one.",
+          "You can connect several banks. If a bank asks you to sign in again, the account shows Needs sign-in with a Reconnect bank link; your accounts and history stay as they are. If bank connections are not available on your plan, the Bank connections page says so — cash you track yourself can still be recorded by hand.",
         ],
         where: "Bank connections",
         keywords: ["plaid", "bank", "connect bank", "link bank", "import", "automatic", "sync"],

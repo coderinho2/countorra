@@ -285,3 +285,16 @@ describe("correlation, environment and dependency timing", () => {
     await expect(measureDependency("stripe", "checkout", { scope: "billing" }, async () => Promise.reject(failure))).rejects.toBe(failure);
   });
 });
+
+describe("reporting a failure once", () => {
+  it("marks what measureDependency recorded, so the caller's catch can skip a second record", async () => {
+    const { measureDependency, wasReported } = await import("./observability");
+    const failure = new Error("provider down");
+    expect(wasReported(failure)).toBe(false);
+    await measureDependency("anthropic", "respond", { scope: "ai" }, async () => Promise.reject(failure)).catch(() => {});
+    expect(wasReported(failure)).toBe(true);
+    expect(wasReported(new Error("another"))).toBe(false);
+    expect(wasReported("not an object")).toBe(false);
+  });
+});
+

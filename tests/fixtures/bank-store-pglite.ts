@@ -252,8 +252,31 @@ export function createPgliteBankStore(db: TestDatabase): BankStore {
       return (await value(`select bank_finalize_disconnect($1, $2, $3)`, [organizationId, connectionId, actorId])) as never;
     },
     async getLinkedAccount(organizationId, linkedAccountId) {
-      const row = await one<Row>(`select id, connection_id, import_mode, account_id, detached_at from bank_linked_accounts where organization_id = $1 and id = $2`, [organizationId, linkedAccountId]);
-      return row ? { id: String(row.id), connectionId: String(row.connection_id), importMode: row.import_mode as never, accountId: (row.account_id as string | null) ?? null, detached: row.detached_at !== null } : null;
+      const row = await one<Row>(`select id, connection_id, import_mode, account_id, detached_at, account_type, account_subtype from bank_linked_accounts where organization_id = $1 and id = $2`, [organizationId, linkedAccountId]);
+      return row
+        ? {
+            id: String(row.id),
+            connectionId: String(row.connection_id),
+            importMode: row.import_mode as never,
+            accountId: (row.account_id as string | null) ?? null,
+            detached: row.detached_at !== null,
+            accountType: row.account_type as never,
+            accountSubtype: (row.account_subtype as string | null) ?? null,
+          }
+        : null;
+    },
+    async getAccountKind(organizationId, accountId) {
+      const row = await one<Row>(`select kind from accounts where organization_id = $1 and id = $2`, [organizationId, accountId]);
+      return row ? String(row.kind) : null;
+    },
+    async autoImportAccounts(organizationId, connectionId) {
+      return Number(await value(`select bank_auto_import_accounts($1, $2)`, [organizationId, connectionId]));
+    },
+    async importLinkedAccount(input) {
+      return (await value(`select bank_import_linked_account($1, $2, $3)`, [input.organizationId, input.linkedAccountId, input.actorId])) as never;
+    },
+    async anchorAccountBalances(organizationId, connectionId) {
+      return Number(await value(`select bank_anchor_account_balances($1, $2)`, [organizationId, connectionId]));
     },
     async linkAccount(input) {
       return (await value(`select bank_link_account($1, $2, $3, $4, $5)`, [input.organizationId, input.linkedAccountId, input.accountId, input.importMode, input.actorId])) as never;

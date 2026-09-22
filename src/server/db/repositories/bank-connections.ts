@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BankConnectionRow, BankLinkedAccountRow, BankSyncJobRow, Database, Json } from "@/types/database";
-import type { ConnectionStatus, ConnectionStatusReason, ImportMode, ReconciliationState, ReviewReason, SyncFailureCategory, SyncJobStatus, SyncTrigger } from "@/domain/bank-connections/types";
+import type { ConnectionStatus, ExternalAccountType, ConnectionStatusReason, ImportMode, ReconciliationState, ReviewReason, SyncFailureCategory, SyncJobStatus, SyncTrigger } from "@/domain/bank-connections/types";
 import {
   decisionPayload,
   ingestPayload,
@@ -370,9 +370,48 @@ export function createSupabaseBankStore(admin: Client): BankStore {
     },
 
     async getLinkedAccount(organizationId, linkedAccountId) {
-      const { data, error } = await admin.from("bank_linked_accounts").select("id, connection_id, import_mode, account_id, detached_at").eq("organization_id", organizationId).eq("id", linkedAccountId).maybeSingle();
+      const { data, error } = await admin
+        .from("bank_linked_accounts")
+        .select("id, connection_id, import_mode, account_id, detached_at, account_type, account_subtype")
+        .eq("organization_id", organizationId)
+        .eq("id", linkedAccountId)
+        .maybeSingle();
       if (error) throw error;
-      return data ? { id: data.id, connectionId: data.connection_id, importMode: data.import_mode as ImportMode, accountId: data.account_id, detached: data.detached_at !== null } : null;
+      return data
+        ? {
+            id: data.id,
+            connectionId: data.connection_id,
+            importMode: data.import_mode as ImportMode,
+            accountId: data.account_id,
+            detached: data.detached_at !== null,
+            accountType: data.account_type as ExternalAccountType,
+            accountSubtype: data.account_subtype,
+          }
+        : null;
+    },
+
+    async getAccountKind(organizationId, accountId) {
+      const { data, error } = await admin.from("accounts").select("kind").eq("organization_id", organizationId).eq("id", accountId).maybeSingle();
+      if (error) throw error;
+      return data?.kind ?? null;
+    },
+
+    async autoImportAccounts(organizationId, connectionId) {
+      const { data, error } = await admin.rpc("bank_auto_import_accounts", { p_organization_id: organizationId, p_connection_id: connectionId });
+      if (error) throw error;
+      return Number(data ?? 0);
+    },
+
+    async importLinkedAccount(input) {
+      const { data, error } = await admin.rpc("bank_import_linked_account", { p_organization_id: input.organizationId, p_linked_account_id: input.linkedAccountId, p_actor: input.actorId });
+      if (error) throw error;
+      return String(data) as LinkOutcome;
+    },
+
+    async anchorAccountBalances(organizationId, connectionId) {
+      const { data, error } = await admin.rpc("bank_anchor_account_balances", { p_organization_id: organizationId, p_connection_id: connectionId });
+      if (error) throw error;
+      return Number(data ?? 0);
     },
 
     async linkAccount(input) {

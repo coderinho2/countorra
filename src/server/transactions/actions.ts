@@ -9,6 +9,7 @@ import {
   categorizeTransaction,
   createTransaction,
   deleteTransaction,
+  getTransaction,
   markReviewed,
 } from "@/server/db/repositories/transactions";
 import { findOrCreateMerchant } from "@/server/db/repositories/merchants";
@@ -186,6 +187,10 @@ export async function deleteTransactionAction(organizationId: string, transactio
   if (!limited.allowed) throw new Error(limited.message);
 
   const client = await createClient();
+  // A bank-imported transaction follows the bank (0054): the database refuses
+  // deleting it from a browser session; this says so instead of failing.
+  const existing = await getTransaction(client, transactionId, organizationId);
+  if (existing?.source === "bank_sync") throw new Error("This transaction comes from your bank and can't be deleted. If the bank removes it, the change arrives on the next sync.");
   const deleted = await deleteTransaction(client, transactionId, organizationId);
   // Only record the audit event if something was actually deleted —
   // otherwise a request pairing this organizationId with another

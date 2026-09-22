@@ -99,13 +99,27 @@ export default async function TransactionDetailPage({ params }: { params: Promis
         </DetailList>
       </Panel>
 
-      <section className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-5">
-        <div className="flex flex-col gap-0.5">
-          <h2 className="text-[13px] font-medium text-text-primary">Delete this transaction</h2>
-          <p className="text-[13px] text-text-secondary">It will be removed from every balance, report and total. This cannot be undone.</p>
-        </div>
-        <DeleteTransactionButton organizationId={orgId} transactionId={transactionId} />
-      </section>
+      {transaction.source === "bank_sync" ? (
+        // Provider data versus Countorra enrichment (0054): the amount, date,
+        // direction and account are your bank's, and follow it — a correction
+        // or removal at the bank reaches this record on the next sync. What
+        // Countorra adds (category, merchant, memo) stays yours to change.
+        <section className="flex flex-col gap-0.5 border-t border-border-subtle pt-5">
+          <h2 className="text-[13px] font-medium text-text-primary">From your bank</h2>
+          <p className="max-w-[70ch] text-[13px] text-text-secondary">
+            The amount, date and account come from your bank and can&apos;t be edited or deleted here — if the bank corrects or removes
+            this transaction, the change arrives on the next sync. The category and merchant are Countorra&apos;s, and you can change them.
+          </p>
+        </section>
+      ) : (
+        <section className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-5">
+          <div className="flex flex-col gap-0.5">
+            <h2 className="text-[13px] font-medium text-text-primary">Delete this transaction</h2>
+            <p className="text-[13px] text-text-secondary">It will be removed from every balance, report and total. This cannot be undone.</p>
+          </div>
+          <DeleteTransactionButton organizationId={orgId} transactionId={transactionId} />
+        </section>
+      )}
     </div>
   );
 }

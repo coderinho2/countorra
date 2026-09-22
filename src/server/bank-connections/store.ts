@@ -23,6 +23,7 @@ import type {
   WebhookEventStatus,
   WebhookEventType,
   WebhookOutcome,
+  ExternalAccountType,
 } from "@/domain/bank-connections/types";
 
 /**
@@ -72,7 +73,19 @@ export type IngestResult =
 
 export type ReconcileOutcome = "APPLIED" | "STALE" | "NOT_FOUND" | "INVALID" | "CONFLICT" | "LEDGER_EDITED";
 export type TransitionOutcome = "APPLIED" | "UNCHANGED" | "STATUS_CHANGED" | "STALE" | "ILLEGAL" | "NOT_FOUND";
-export type LinkOutcome = "APPLIED" | "NOT_FOUND" | "DETACHED" | "INVALID" | "CURRENCY_UNKNOWN" | "CURRENCY_MISMATCH" | "HAS_IMPORTED_HISTORY" | "ACCOUNT_ALREADY_LINKED";
+export type LinkOutcome =
+  | "APPLIED"
+  | "NOT_FOUND"
+  | "DETACHED"
+  | "INVALID"
+  | "CURRENCY_UNKNOWN"
+  | "CURRENCY_MISMATCH"
+  | "HAS_IMPORTED_HISTORY"
+  | "ACCOUNT_ALREADY_LINKED"
+  // 0054: refused by the application before the database is asked.
+  | "UNSUPPORTED_ACCOUNT_TYPE"
+  | "ACCOUNT_KIND_MISMATCH"
+  | "ALREADY_DECIDED";
 export type DisconnectOutcome = ConnectionStatus | "NOT_FOUND" | "ALREADY_DISCONNECTED";
 
 export interface ReconciliationRow extends Omit<ReconciliationInput, "candidates"> {
@@ -171,7 +184,26 @@ export interface BankStore {
 
   transitionConnection(input: { organizationId: string; connectionId: string; expectedStatus: ConnectionStatus; to: ConnectionStatus; reason: ConnectionStatusReason; eventAt: string | null }): Promise<TransitionOutcome>;
   finalizeDisconnect(organizationId: string, connectionId: string, actorId: string | null): Promise<DisconnectOutcome>;
-  getLinkedAccount(organizationId: string, linkedAccountId: string): Promise<{ id: string; connectionId: string; importMode: ImportMode; accountId: string | null; detached: boolean } | null>;
+  getLinkedAccount(
+    organizationId: string,
+    linkedAccountId: string,
+  ): Promise<{ id: string; connectionId: string; importMode: ImportMode; accountId: string | null; detached: boolean; accountType: ExternalAccountType; accountSubtype: string | null } | null>;
+  /** The kind of a Countorra account in this organization, or null. */
+  getAccountKind(organizationId: string, accountId: string): Promise<string | null>;
+  /**
+   * Creates and links the Countorra account for every supported account the
+   * bank reported that is still awaiting a decision (bank_auto_import_accounts,
+   * 0054). Returns how many were created. Idempotent.
+   */
+  autoImportAccounts(organizationId: string, connectionId: string): Promise<number>;
+  /**
+   * Sets each Countorra-created account's opening balance so its ledger
+   * balance equals the bank's current balance (bank_anchor_account_balances,
+   * 0054). Returns how many changed.
+   */
+  anchorAccountBalances(organizationId: string, connectionId: string): Promise<number>;
+  /** Creates the Countorra account for one reported bank account and links it (bank_import_linked_account, 0054). */
+  importLinkedAccount(input: { organizationId: string; linkedAccountId: string; actorId: string | null }): Promise<LinkOutcome>;
   linkAccount(input: { organizationId: string; linkedAccountId: string; accountId: string | null; importMode: "IMPORT" | "IGNORE"; actorId: string | null }): Promise<LinkOutcome>;
 
   claimWebhookEvent(input: { provider: string; providerEventId: string; eventType: WebhookEventType; providerEventType: string; providerConnectionId: string | null; occurredAt: string | null; payloadSha256: string; leaseSeconds: number }): Promise<WebhookClaim>;

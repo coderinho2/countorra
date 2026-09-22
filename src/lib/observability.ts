@@ -377,6 +377,13 @@ export function reportEvent(name: string, context: ReportContext, severity: Seve
  * rethrown unchanged. The measurement is real wall-clock time for this call;
  * nothing is sampled or estimated.
  */
+/** Errors `measureDependency` has already recorded, so a caller's own catch
+ *  can skip recording the same failure a second time. */
+const alreadyReported = new WeakSet<object>();
+export function wasReported(error: unknown): boolean {
+  return typeof error === "object" && error !== null && alreadyReported.has(error);
+}
+
 export async function measureDependency<T>(
   dependency: "database" | "anthropic" | "stripe" | "plaid" | "email",
   operation: string,
@@ -390,6 +397,7 @@ export async function measureDependency<T>(
     return result;
   } catch (error) {
     reportError(error, { ...context, detail: { ...context.detail, dependency, operation, outcome: "failed", durationMs: Math.round(performance.now() - started) } });
+    if (typeof error === "object" && error !== null) alreadyReported.add(error);
     throw error;
   }
 }

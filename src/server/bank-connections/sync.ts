@@ -78,6 +78,10 @@ export interface SyncCounts {
   updated: number;
   flagged: number;
   reconciled: number;
+  /** Countorra accounts created from accounts the bank reported (0054). */
+  accountsImported: number;
+  /** Countorra-created accounts whose balance was re-anchored to the bank's. */
+  balancesAnchored: number;
 }
 
 export type SyncRunOutcome =
@@ -89,7 +93,7 @@ export type SyncRunOutcome =
   | { kind: "cancelled"; jobId: string; runId: string }
   | { kind: "abandoned"; jobId: string; runId: string };
 
-const emptyCounts = (): SyncCounts => ({ pages: 0, added: 0, modified: 0, unchanged: 0, removed: 0, rejected: 0, imported: 0, matched: 0, updated: 0, flagged: 0, reconciled: 0 });
+const emptyCounts = (): SyncCounts => ({ pages: 0, added: 0, modified: 0, unchanged: 0, removed: 0, rejected: 0, imported: 0, matched: 0, updated: 0, flagged: 0, reconciled: 0, accountsImported: 0, balancesAnchored: 0 });
 
 /**
  * Claims a job by id and runs it. The entry point a request uses (an inline
@@ -207,9 +211,10 @@ export async function executeClaimedSyncRun(
       }
 
       const fetched = await runBankProviderCall(
-        (signal) => provider.fetchTransactions({ secret: secret!, cursor, pageSize: MAX_PAGE_SIZE, signal }),
+        (signal) => provider.fetchTransactions({ secret: secret!, cursor, pageSize: MAX_PAGE_SIZE, signal, includeAccounts: page === 0 }),
         providerTransactionsPageSchema,
         deps.providerTimeoutMs,
+        "sync_transactions",
       );
       if (!fetched.ok) {
         if (fetched.category === "CURSOR_RESET_REQUIRED") await deps.store.resetPageCursor(input.organizationId, connection.id);
@@ -234,6 +239,11 @@ export async function executeClaimedSyncRun(
       counts.removed += ingested.removed;
       counts.rejected += ingested.rejected;
 
+      // Plaid-first (0054): every supported account the bank just reported
+      // gets its Countorra account now — before this page's transactions are
+      // reconciled, so they land in the ledger in this same run.
+      counts.accountsImported += await deps.store.autoImportAccounts(input.organizationId, connection.id);
+
       addCounts(counts, await reconcileConnection(deps, { organizationId: input.organizationId, connectionId: connection.id, runId, budget: reconcileBudget }));
 
       cursor = normalized.nextCursor;
@@ -243,6 +253,18 @@ export async function executeClaimedSyncRun(
   } catch (error) {
     reportError(error, { scope: "bank", organizationId: input.organizationId, detail: { step: "sync_page", ...detail } });
     return fail("INTERNAL_ERROR");
+  }
+
+  // Once the provider has nothing more for now, the balances of the accounts
+  // Countorra created are re-anchored to the bank's current balance (0054).
+  // Not mid-history: a continuation would only undo it. A failure here does
+  // not fail the sync — the transactions are in, and the next run anchors.
+  if (!hasMore) {
+    try {
+      counts.balancesAnchored += await deps.store.anchorAccountBalances(input.organizationId, connection.id);
+    } catch (error) {
+      reportError(error, { scope: "bank", organizationId: input.organizationId, detail: { step: "anchor_balances", ...detail } });
+    }
   }
 
   const completed = await deps.store.completeRun({ organizationId: input.organizationId, runId, outcome: "SUCCEEDED", failureCategory: null, nextAttemptAt: null, countsAgainstConnection: false, durationMs: Date.now() - started });
@@ -277,6 +299,8 @@ export async function executeClaimedSyncRun(
       ledgerMatched: counts.matched,
       ledgerUpdated: counts.updated,
       flaggedForReview: counts.flagged,
+      accountsImported: counts.accountsImported,
+      balancesAnchored: counts.balancesAnchored,
       hasMore,
       durationMs: Date.now() - started,
     },

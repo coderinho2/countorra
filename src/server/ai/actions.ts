@@ -8,7 +8,7 @@ import { createToolRegistry } from "@/domain/ai/tools/registry";
 import { isToolInLaunchScope } from "@/domain/ai/tools/launch-scope";
 import { DEFERRED_MODULE_MESSAGE } from "@/domain/organizations/launch-scope";
 import { assertAuthorized, UnauthorizedAiActionError } from "@/domain/ai/safety";
-import { measureDependency, reportError, reportEvent } from "@/lib/observability";
+import { measureDependency, reportError, reportEvent, wasReported } from "@/lib/observability";
 import { currentRequestId } from "@/server/observability/request-id";
 import { ProviderError } from "@/domain/ai/provider-errors";
 import { parseToolInput } from "@/domain/ai/tools/types";
@@ -324,7 +324,10 @@ export async function sendAiMessage(input: SendAiMessageInput): Promise<SendAiMe
     // transcript is read back later by both the user and the model.
     // Through the redacting seam, never raw: a database or SDK message can
     // carry connection details (src/lib/observability.ts).
-    reportError(error, { ...observed, detail: { step: "send_ai_message", providerError: error instanceof ProviderError } });
+    // Once: a model failure was already recorded, with its duration, by
+    // measureDependency; only failures after it (saving the reply, pending
+    // actions) are recorded here.
+    if (!wasReported(error)) reportError(error, { ...observed, detail: { step: "send_ai_message", providerError: error instanceof ProviderError } });
 
     // A `ProviderError` has already been classified and phrased for a person
     // at the provider boundary (429, 5xx, timeout, malformed reply), so its

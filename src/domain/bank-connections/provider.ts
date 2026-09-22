@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reportEvent } from "@/lib/observability";
 import { EXTERNAL_ACCOUNT_TYPES, WEBHOOK_EVENT_TYPES, type SyncFailureCategory } from "./types";
 
 /**
@@ -239,8 +240,13 @@ export interface BankConnectionProvider {
    *  `providerConnectionStateSchema`. */
   inspectConnection(input: { secret: ProviderSecret; signal: AbortSignal }): Promise<unknown>;
   fetchAccounts(input: { secret: ProviderSecret; signal: AbortSignal }): Promise<unknown>;
-  /** Cursor-based and incremental: `null` starts from the beginning. */
-  fetchTransactions(input: { secret: ProviderSecret; cursor: string | null; pageSize: number; signal: AbortSignal }): Promise<unknown>;
+  /**
+   * Cursor-based and incremental: `null` starts from the beginning.
+   * `includeAccounts` asks for the account list (with balances) alongside the
+   * page — the sync sets it on the first page of every run, so balances and
+   * newly opened accounts are refreshed each run, not only on the first.
+   */
+  fetchTransactions(input: { secret: ProviderSecret; cursor: string | null; pageSize: number; signal: AbortSignal; includeAccounts?: boolean }): Promise<unknown>;
   revoke(input: { secret: ProviderSecret; signal: AbortSignal }): Promise<unknown>;
   /**
    * Verifies a webhook against the provider's signature scheme, using the raw
@@ -273,7 +279,21 @@ export async function runBankProviderCall<T>(
   call: (signal: AbortSignal) => Promise<unknown>,
   schema: z.ZodType<T>,
   timeoutMs = PROVIDER_CALL_TIMEOUT_MS,
+  operation = "provider_call",
 ): Promise<ProviderCallOutcome<T>> {
+  const outcome = await runTimedProviderCall(call, schema, timeoutMs);
+  // One record per provider call — operation, outcome, failure category and
+  // duration, and nothing else: the value, the token and the payload never
+  // reach it (src/lib/observability.ts redacts regardless).
+  reportEvent(
+    "dependency.call",
+    { scope: "bank", detail: { dependency: "bank_provider", operation, outcome: outcome.ok ? "ok" : "failed", errorCategory: outcome.ok ? null : outcome.category, durationMs: outcome.durationMs } },
+    outcome.ok ? "info" : "warning",
+  );
+  return outcome;
+}
+
+async function runTimedProviderCall<T>(call: (signal: AbortSignal) => Promise<unknown>, schema: z.ZodType<T>, timeoutMs: number): Promise<ProviderCallOutcome<T>> {
   const started = Date.now();
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;

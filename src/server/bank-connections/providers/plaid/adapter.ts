@@ -125,15 +125,18 @@ export class PlaidBankProvider implements BankConnectionProvider {
     return { accounts: response.accounts.map(toProviderAccount) };
   }
 
-  async fetchTransactions(input: { secret: ProviderSecret; cursor: string | null; pageSize: number; signal: AbortSignal }): Promise<unknown> {
+  async fetchTransactions(input: { secret: ProviderSecret; cursor: string | null; pageSize: number; signal: AbortSignal; includeAccounts?: boolean }): Promise<unknown> {
     const sync = await this.call(plaidSyncResponseSchema, () =>
       this.deps.gateway.syncTransactions({ accessToken: input.secret.reveal(), cursor: input.cursor, count: Math.max(1, Math.min(input.pageSize, 500)) }),
     );
 
-    // Accounts come with the first page of a pagination run only: they are the
-    // same list on every page, and re-reading them per page would be one extra
-    // Plaid call per page for nothing.
-    const accounts = input.cursor === null ? (await this.call(plaidAccountsResponseSchema, () => this.deps.gateway.getAccounts(input.secret.reveal()))).accounts.map(toProviderAccount) : [];
+    // Accounts come with the first page of each sync RUN: the same list on
+    // every page, so once per run, not per page. This used to test only
+    // `cursor === null`, which is true once in a connection's life — so after
+    // the first sync, balances never refreshed and accounts opened later at
+    // the bank never appeared. The sync now says when it wants them.
+    const wantAccounts = input.includeAccounts ?? input.cursor === null;
+    const accounts = wantAccounts ? (await this.call(plaidAccountsResponseSchema, () => this.deps.gateway.getAccounts(input.secret.reveal()))).accounts.map(toProviderAccount) : [];
 
     return {
       accounts,

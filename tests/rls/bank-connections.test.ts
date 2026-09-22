@@ -698,14 +698,18 @@ describe("reconciliation into the ledger", () => {
     expect(await scalar(`select flagged_for_review from bank_sync_runs where id = $1`, [runId])).toBe(1);
   });
 
-  it("keeps the bank's record when a person deletes the imported transaction, and does not import it again", async () => {
+  it("refuses a person deleting an imported transaction; if the ledger row goes anyway, keeps the bank's record and does not import it again", async () => {
     const { connectionId } = await importReady();
     const ext = await external(connectionId, "t-1");
     expect(await reconcile(orgA, ext.id, ext.revision, { kind: "IMPORT", ledger: importFields(usdA) })).toBe("APPLIED");
     const ledgerId = (await external(connectionId, "t-1")).ledger_transaction_id!;
 
+    // 0054: the bank's facts are the bank's — a person cannot delete them.
     await db.asUser(OWNER_A);
-    await db.query(`delete from transactions where id = $1`, [ledgerId]);
+    await expect(db.query(`delete from transactions where id = $1`, [ledgerId])).rejects.toThrow(/cannot be deleted; it follows the bank/);
+
+    // The engine still copes if the row disappears by other means (the system).
+    await service((query) => query(`delete from transactions where id = $1`, [ledgerId]));
     const after = await external(connectionId, "t-1");
     expect(after.ledger_transaction_id).toBeNull();
     expect(after.ledger_linked_at).not.toBeNull();

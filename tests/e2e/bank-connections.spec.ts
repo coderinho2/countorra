@@ -272,11 +272,23 @@ test("linking a bank account posts the chosen account, or 'don't import' — and
   await page.getByRole("combobox", { name: "Account fed by High-Yield Savings" }).click();
   const options = await page.getByRole("option").allTextContents();
   // Checking is already fed by a bank; the EUR account is another currency.
-  expect(options).toEqual(["Savings", "Don't import"]);
+  // Plaid-first (0054): importing as a new account comes first; a hand-kept
+  // account of the same kind can be continued instead.
+  expect(options).toEqual(["Import as a new account", "Continue Savings", "Don't import"]);
   await page.getByRole("option", { name: "Don't import" }).click();
   await page.getByRole("button", { name: "Save" }).click();
   await expect.poll(() => submissions(page)).toHaveLength(1);
   expect((await submissions(page))[0]).toEqual({ action: "link", fields: { organizationId: ORG, linkedAccountId: "l2222222-2222-4222-8222-222222222222", target: "ignore" } });
+});
+
+test("importing a bank account as a new account posts only that choice", async ({ page }) => {
+  await open(page, "state=history&role=owner");
+  await page.getByRole("combobox", { name: "Account fed by High-Yield Savings" }).click();
+  await page.getByRole("option", { name: "Import as a new account" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect.poll(() => submissions(page)).toHaveLength(1);
+  // No account id, balance or amount travels from the browser — only the choice.
+  expect((await submissions(page))[0]).toEqual({ action: "link", fields: { organizationId: ORG, linkedAccountId: "l2222222-2222-4222-8222-222222222222", target: "new" } });
 });
 
 test("a review decision posts one resolution for one transaction", async ({ page }) => {

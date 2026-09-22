@@ -15,7 +15,7 @@ import { CONNECTION_STATUS_PRESENTATION, SYNC_FAILURE_TEXT } from "@/domain/bank
 import { bankLinkStateKeyset, configuredBankProviders } from "./providers";
 import { clearBankLinkStateCookie, openBankLinkState, readBankLinkStateCookie, sealBankLinkState, writeBankLinkStateCookie } from "./link-state";
 import { productionBankDependencies } from "./runtime";
-import { completeBankLink, completeBankReauth, createBankLinkSession, disconnectBankConnection, linkExternalAccount, requestBankSync, resolveBankReview, type LinkAccountResult, type ResolveReviewResult } from "./service";
+import { completeBankLink, completeBankReauth, createBankLinkSession, disconnectBankConnection, importExternalAccountAsNew, linkExternalAccount, requestBankSync, resolveBankReview, type LinkAccountResult, type ResolveReviewResult } from "./service";
 
 /**
  * Bank-connection Server Actions.
@@ -476,7 +476,9 @@ export async function disconnectBankConnectionAction(_prev: BankActionResult, fo
 const linkSchema = z.object({
   organizationId: z.uuid(),
   linkedAccountId: z.uuid(),
-  target: z.union([z.literal("ignore"), z.uuid()]),
+  // "new": import as a new account (0054); "ignore": don't import; or an
+  // existing account of the same kind to continue.
+  target: z.union([z.literal("ignore"), z.literal("new"), z.uuid()]),
 });
 
 const LINK_REFUSALS: Record<Extract<LinkAccountResult, { kind: "refused" }>["reason"], string> = {
@@ -487,6 +489,9 @@ const LINK_REFUSALS: Record<Extract<LinkAccountResult, { kind: "refused" }>["rea
   CURRENCY_MISMATCH: "That account uses a different currency. Countorra never converts currencies.",
   HAS_IMPORTED_HISTORY: "Transactions from this bank account are already in another account's books, so it stays linked there.",
   ACCOUNT_ALREADY_LINKED: "That account is already fed by another bank account.",
+  UNSUPPORTED_ACCOUNT_TYPE: "This kind of bank account isn't supported yet, so it can't be imported.",
+  ACCOUNT_KIND_MISMATCH: "A bank account can only feed an account of the same kind — checking and savings into a bank account, a credit card into a credit card.",
+  ALREADY_DECIDED: "This bank account is already being imported.",
 };
 
 export async function linkExternalAccountAction(_prev: BankActionResult, formData: FormData): Promise<BankActionResult> {
@@ -501,17 +506,28 @@ export async function linkExternalAccountAction(_prev: BankActionResult, formDat
 
   try {
     const importMode = target === "ignore" ? "IGNORE" : "IMPORT";
-    const outcome = await linkExternalAccount(productionBankDependencies(), { organizationId, linkedAccountId, accountId: importMode === "IMPORT" ? target : null, importMode, actorId: user.id });
+    const outcome =
+      target === "new"
+        ? await importExternalAccountAsNew(productionBankDependencies(), { organizationId, linkedAccountId, actorId: user.id })
+        : await linkExternalAccount(productionBankDependencies(), { organizationId, linkedAccountId, accountId: importMode === "IMPORT" ? target : null, importMode, actorId: user.id });
     if (outcome.kind === "refused") return { error: LINK_REFUSALS[outcome.reason] };
     await recordAuditEvent(await createClient(), {
       organizationId,
       action: AUDIT_ACTIONS.bankAccountLinked,
       resourceType: "bank_linked_account",
       resourceId: linkedAccountId,
-      metadata: { importMode, accountId: importMode === "IMPORT" ? target : null, reconciled: outcome.reconciled },
+      metadata: { importMode, accountId: importMode === "IMPORT" && target !== "new" ? target : null, createdAccount: target === "new", reconciled: outcome.reconciled },
     });
     revalidateBankPages(organizationId, true);
-    return { success: true, message: importMode === "IGNORE" ? "Nothing from this bank account will be imported." : "Linked. Posted transactions are matched to your entries or imported." };
+    return {
+      success: true,
+      message:
+        importMode === "IGNORE"
+          ? "Nothing from this bank account will be imported."
+          : target === "new"
+            ? "Imported as a new account. Its transactions and balance come from your bank."
+            : "Linked. Posted transactions are matched to your entries or imported.",
+    };
   } catch (error) {
     reportError(error, { scope: "bank", organizationId, userId: user.id, detail: { step: "link_account", linkedAccountId } });
     return { error: GENERIC_FAILURE };

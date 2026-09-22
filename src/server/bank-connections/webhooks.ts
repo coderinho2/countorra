@@ -49,7 +49,7 @@ export async function ingestBankWebhook(
   const verified = await runBankProviderCall((signal) => {
     void signal;
     return provider.verifyWebhook({ rawBody: input.rawBody, headers: input.headers, receivedAt: deps.now() });
-  }, providerWebhookEventSchema, 10_000);
+  }, providerWebhookEventSchema, 10_000, "verify_webhook");
   if (!verified.ok) {
     reportEvent("bank.webhook_rejected", { scope: "bank", detail: { provider: provider.id, errorCategory: verified.category } }, "warning");
     return { status: 400, body: { error: "unverified" } };

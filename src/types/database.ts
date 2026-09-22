@@ -2612,6 +2612,21 @@ export type Database = {
        * scopes a direct select; `p_organization_id` narrows the scan, it does
        * not grant access.
        */
+      /** 0054: creates and links Countorra accounts for supported bank accounts. Service role only. */
+      bank_auto_import_accounts: {
+        Args: { p_organization_id: string; p_connection_id: string };
+        Returns: number;
+      };
+      /** 0054: creates the Countorra account for one reported bank account. Service role only. */
+      bank_import_linked_account: {
+        Args: { p_organization_id: string; p_linked_account_id: string; p_actor: string | null };
+        Returns: string;
+      };
+      /** 0054: anchors Countorra-created accounts' balances to the bank's. Service role only. */
+      bank_anchor_account_balances: {
+        Args: { p_organization_id: string; p_connection_id: string };
+        Returns: number;
+      };
       /** 0053: whether a person may enter transactions by hand into this account. */
       account_accepts_manual_entry: {
         Args: { p_account_id: string };

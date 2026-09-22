@@ -187,8 +187,19 @@ function AccountRow({
         </span>
       </div>
       {bankFeed && isConnectionStatus(bankFeed.connectionStatus) && (
-        <span className="ml-auto shrink-0">
+        <span className="ml-auto flex shrink-0 flex-col items-end gap-1">
           <ConnectionStatusBadge status={bankFeed.connectionStatus} />
+          {/* The bank wants the person to sign in again. The repair itself
+              is Plaid's update mode, on the Bank connections page; it keeps
+              this account and its history and resumes the sync. */}
+          {bankFeed.connectionStatus === "REQUIRES_REAUTH" && (
+            <Link
+              href={`/app/${organizationId}/bank-connections`}
+              className="text-accent hover:text-accent-hover text-[12px] font-medium transition-colors duration-[var(--duration-fast)] ease-out"
+            >
+              Reconnect bank
+            </Link>
+          )}
         </span>
       )}
       {/* The balance is the point of the row, so it carries the

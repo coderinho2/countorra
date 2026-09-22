@@ -1,3 +1,4 @@
+import { importedAccountKind, unsupportedAccountReason } from "@/domain/bank-connections/account-import";
 import Link from "next/link";
 import { Bank } from "@phosphor-icons/react/dist/ssr/Bank";
 import { Info } from "@phosphor-icons/react/dist/ssr/Info";
@@ -436,10 +437,15 @@ function ConnectionPanel({
             </TableHeader>
             <TableBody>
               {connection.linkedAccounts.map((account) => {
+                // Plaid-first (0054): supported accounts are imported by
+                // themselves; an unsupported one says why, and offers nothing.
+                const importKind = importedAccountKind(account.accountType, account.accountSubtype);
+                const unsupported = !account.detached && account.importMode !== "IMPORT" ? unsupportedAccountReason(account.accountType, account.accountSubtype) : null;
                 const choosable =
                   permissions.manage &&
                   !account.detached &&
-                  account.importMode !== "IMPORT";
+                  account.importMode !== "IMPORT" &&
+                  importKind !== null;
                 return (
                   <TableRow key={account.id}>
                     <TableCell className="min-w-[180px] py-2">
@@ -482,16 +488,18 @@ function ConnectionPanel({
                       )}
                     </TableCell>
                     <TableCell className="min-w-[220px] py-2">
-                      {choosable ? (
+                      {unsupported ? (
+                        <span className="max-w-[36ch] text-[13px] text-text-secondary">{unsupported}</span>
+                      ) : choosable ? (
                         <LinkAccountForm
                           organizationId={organizationId}
                           linkedAccountId={account.id}
-                          currency={account.currency}
                           label={`Account fed by ${account.displayName}`}
                           accounts={accounts
                             .filter(
                               (candidate) =>
                                 candidate.currency === account.currency &&
+                                candidate.kind === importKind &&
                                 !fedAccountIds.has(candidate.id),
                             )
                             .map((candidate) => ({

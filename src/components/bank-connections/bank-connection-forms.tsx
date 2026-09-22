@@ -102,14 +102,13 @@ export function DisconnectConnectionDialog({ organizationId, connectionId, insti
 export function LinkAccountForm({
   organizationId,
   linkedAccountId,
-  currency,
   accounts,
   label,
 }: {
   organizationId: string;
   linkedAccountId: string;
-  currency: string | null;
-  /** Countorra accounts in this bank account's currency, not already fed by a bank. */
+  /** Countorra accounts of the same kind and currency, kept by hand and not
+   *  already fed by a bank — the ones this bank account could continue. */
   accounts: { id: string; name: string }[];
   label: string;
 }) {
@@ -127,14 +126,15 @@ export function LinkAccountForm({
         <label htmlFor={fieldId} className="sr-only">
           {label}
         </label>
-        <Select name="target" defaultValue={accounts[0]?.id ?? "ignore"}>
+        <Select name="target" defaultValue="new">
           <SelectTrigger id={fieldId} className="h-8 w-[200px] text-[13px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="new">Import as a new account</SelectItem>
             {accounts.map((account) => (
               <SelectItem key={account.id} value={account.id}>
-                {account.name}
+                Continue {account.name}
               </SelectItem>
             ))}
             <SelectItem value="ignore">Don&apos;t import</SelectItem>
@@ -144,7 +144,11 @@ export function LinkAccountForm({
           {pending ? "Saving…" : "Save"}
         </Button>
       </div>
-      {accounts.length === 0 && <p className="text-[12px] text-text-tertiary">No {currency ?? "matching"} account to import into. Add one under Accounts first.</p>}
+      {accounts.length > 0 && (
+        <p className="max-w-[40ch] text-[12px] text-text-tertiary">
+          Continuing an account you kept by hand matches your entries instead of importing them twice.
+        </p>
+      )}
       <Result state={state} />
     </form>
   );
