@@ -104,15 +104,39 @@ test("onboarding is one personal step with US-first defaults — no workspace ty
   await expect(page.getByText("Your personal workspace")).toBeVisible();
 
   await expect(page.getByLabel("What should we call it?")).toBeVisible();
-  await expect(page.getByLabel("Country")).toHaveValue("US");
   await expect(page.getByLabel("Currency")).toHaveValue("USD");
   await expect(page.getByRole("button", { name: "Create my workspace" })).toBeVisible();
 });
 
+test("onboarding requires one of the five supported states, with nothing preselected", async ({ page }) => {
+  await page.goto("/onboarding");
+  const group = page.getByRole("group", { name: "What state do you live in?" });
+  await expect(group).toBeVisible();
+  await expect(page.getByText("Your state helps Countorra personalize your tax calculations and financial guidance", { exact: false })).toBeVisible();
+
+  const radios = group.getByRole("radio");
+  await expect(radios).toHaveCount(5);
+  for (const name of ["California", "Texas", "Arizona", "Florida", "New York"]) {
+    await expect(group.getByRole("radio", { name: new RegExp(name) })).not.toBeChecked();
+  }
+  await expect(radios.first()).toHaveAttribute("required", "");
+
+  // One choice at a time; the chosen value is the state code the server validates.
+  await group.getByRole("radio", { name: /Texas/ }).check();
+  await group.getByRole("radio", { name: /New York/ }).check();
+  await expect(group.getByRole("radio", { name: /Texas/ })).not.toBeChecked();
+  await expect(group.getByRole("radio", { name: /New York/ })).toHaveValue("NY");
+
+  // US-only: the country is fixed, and nothing sensitive is asked.
+  await expect(page.locator('input[name="country"]')).toHaveValue("US");
+  await expect(page.getByText(/SSN|Social Security|EIN|ITIN|routing number/i)).toHaveCount(0);
+});
+
 test("onboarding never offers Freelancer or Business, and sends no entity type", async ({ page }) => {
   await page.goto("/onboarding");
-  await expect(page.getByRole("radiogroup")).toHaveCount(0);
-  await expect(page.getByRole("radio")).toHaveCount(0);
+  // The only choice on the page is the state; no workspace-type option exists.
+  await expect(page.getByRole("radio", { name: /Personal|Freelancer|Business/ })).toHaveCount(0);
+  await expect(page.getByRole("radio")).toHaveCount(5);
   await expect(page.getByText(/Freelancer|Business name|What are you using Countorra for/)).toHaveCount(0);
   // The server sets the workspace type; the form does not carry one.
   await expect(page.locator('input[name="entityType"]')).toHaveCount(0);

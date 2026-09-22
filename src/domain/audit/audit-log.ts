@@ -43,6 +43,8 @@ export async function recordAuditEvent(
  */
 export const AUDIT_ACTIONS = {
   organizationCreated: "organization.created",
+  /** The workspace's state of residence changed — and with it the state tax rules applied. */
+  organizationStateChanged: "organization.state_changed",
   membershipRoleChanged: "membership.role_changed",
   accountCreated: "account.created",
   accountArchived: "account.archived",

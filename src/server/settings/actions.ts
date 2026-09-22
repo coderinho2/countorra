@@ -5,7 +5,8 @@ import { createClient } from "@/server/supabase/server";
 import { requireUser, requireOrgMembership } from "@/server/auth/session";
 import { can } from "@/domain/organizations/permissions";
 import { updateProfile } from "@/server/db/repositories/profiles";
-import { updateOrganization } from "@/server/db/repositories/organizations";
+import { getOrganization, updateOrganization } from "@/server/db/repositories/organizations";
+import { supportedStateSchema } from "@/domain/tax/supported-states";
 import { createCategory } from "@/server/db/repositories/categories";
 import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { currencySchema } from "@/validation/schemas/money";
@@ -35,20 +36,13 @@ const organizationSchema = z.object({
   name: z.string().min(1).max(200),
   country: z.string().length(2),
   /**
-   * USPS two-letter state code, and the only thing that puts a workspace
-   * into a state tax engine. Uppercased before it is stored so that "ca"
-   * and "CA" behave identically — a lowercase value that silently failed to
-   * match would look exactly like "California isn't supported".
-   *
-   * An empty field clears it, which is the correct state for a workspace
-   * with no state income tax. It is never inferred from anything else.
+   * The state the workspace lives in, and the only thing that selects its
+   * state tax rules. Required, and one of the supported states
+   * (src/domain/tax/supported-states.ts) — Texas and Florida included, whose
+   * answer is "no individual income tax". It cannot be cleared: a blank would
+   * mean "unknown", not "no state tax". Never inferred from anything else.
    */
-  stateRegion: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-Z]{2}$/, "Use the two-letter state code, or leave it blank.")
-    .optional(),
+  stateRegion: supportedStateSchema,
   baseCurrency: currencySchema,
   taxIdentifier: z.string().max(50).optional(),
   taxIdentifierType: z.enum(["ein", "ssn", "itin", "other"]).optional(),
@@ -59,7 +53,7 @@ export async function updateOrganizationAction(_prev: SettingsActionResult, form
     organizationId: formData.get("organizationId"),
     name: formData.get("name"),
     country: formData.get("country"),
-    stateRegion: formData.get("stateRegion") || undefined,
+    stateRegion: formData.get("stateRegion") ?? undefined,
     baseCurrency: formData.get("baseCurrency"),
     taxIdentifier: formData.get("taxIdentifier") || undefined,
     taxIdentifierType: formData.get("taxIdentifierType") || undefined,
@@ -75,14 +69,32 @@ export async function updateOrganizationAction(_prev: SettingsActionResult, form
 
 
   const client = await createClient();
+  // Read before writing, under the caller's own RLS, so a state change can be
+  // audited with what it replaced.
+  const before = await getOrganization(client, parsed.data.organizationId);
+  if (!before) return { error: "Workspace not found." };
+
   await updateOrganization(client, parsed.data.organizationId, {
     name: parsed.data.name,
     country: parsed.data.country,
-    stateRegion: parsed.data.stateRegion ?? null,
+    stateRegion: parsed.data.stateRegion,
     baseCurrency: parsed.data.baseCurrency,
     taxIdentifier: parsed.data.taxIdentifier ?? null,
     taxIdentifierType: parsed.data.taxIdentifierType,
   });
+
+  // Changing the state changes which state tax rules every calculation uses
+  // (open preparation cases are re-run under the new state — see
+  // src/domain/tax-preparation/jurisdiction.ts), so it is recorded.
+  if (before.stateRegion !== parsed.data.stateRegion) {
+    await recordAuditEvent(client, {
+      organizationId: parsed.data.organizationId,
+      action: AUDIT_ACTIONS.organizationStateChanged,
+      resourceType: "organization",
+      resourceId: parsed.data.organizationId,
+      metadata: { from: before.stateRegion, to: parsed.data.stateRegion },
+    });
+  }
 
   revalidatePath(`/app/${parsed.data.organizationId}`, "layout");
   return { success: true };

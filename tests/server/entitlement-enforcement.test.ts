@@ -141,6 +141,7 @@ function onboardingForm(name = "New Workspace") {
   form.set("name", name);
   // Onboarding no longer sends an entity type: every workspace is personal.
   form.set("country", "US");
+  form.set("stateRegion", "CA");
   form.set("baseCurrency", "USD");
   return form;
 }

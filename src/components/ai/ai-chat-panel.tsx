@@ -35,7 +35,7 @@ export interface Turn {
  * what the assistant is actually able to answer.
  */
 export const SUGGESTED_QUESTIONS: { group: string; questions: string[] }[] = [
-  { group: "Position", questions: ["How much did I spend this month?", "Can I afford a $2,000 purchase?"] },
+  { group: "Position", questions: ["How much did I spend this month?", "Can I afford a $2,000 purchase?", "What's my net worth?"] },
   { group: "Patterns", questions: ["What were my biggest expenses?", "Why did my spending increase?", "Show me my subscriptions."] },
   { group: "Taxes", questions: ["What's still missing from my tax preparation?"] },
 ];

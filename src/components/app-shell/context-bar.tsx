@@ -23,12 +23,15 @@ import { cn } from "@/lib/utils";
 export function ContextBar({
   workspace,
   entity,
+  state,
   currency,
   asOf,
   className,
 }: {
   workspace: string;
   entity: string;
+  /** The workspace's state of residence, or "Not set" — never a guess. */
+  state: string;
   currency: string;
   asOf: string;
   className?: string;
@@ -43,6 +46,7 @@ export function ContextBar({
     >
       <Field label="WORKSPACE" value={workspace} emphasis />
       <Field label="ENTITY" value={entity} />
+      <Field label="STATE" value={state} />
       <Field label="BASE" value={currency} />
       <Field label="AS OF" value={asOf} />
       {/* A live indicator, but an honest one: it marks that the figures on

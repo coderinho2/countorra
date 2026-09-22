@@ -233,3 +233,22 @@ describe("what the model is told to say", () => {
     expect(disclaimer).toContain("no Texas individual income tax return to file");
   });
 });
+
+describe("the workspace's state of residence travels with the result", () => {
+  it("names Texas, from the workspace, as a state without individual income tax", async () => {
+    expect((await tx()).stateResidence).toEqual({ status: "SET", code: "TX", name: "Texas", leviesIndividualIncomeTax: false });
+  });
+
+  it("says the state is not set — rather than leaving a bare null — when there is none", async () => {
+    state.stateRegion = null;
+    const result = await tx();
+    expect(result.state).toBeNull();
+    expect(result.stateResidence).toMatchObject({ status: "NOT_SET" });
+  });
+
+  it("cannot be moved to another state by the model: there is no argument for it", async () => {
+    const tool = createToolRegistry({} as never).find((t) => t.name === "calculateTaxEstimate")!;
+    expect(Object.keys((tool.inputSchema as { properties: Record<string, unknown> }).properties)).not.toContain("stateRegion");
+    expect(Object.keys((tool.inputSchema as { properties: Record<string, unknown> }).properties)).not.toContain("state");
+  });
+});

@@ -69,10 +69,10 @@ describe("the entity model", () => {
   });
 
   it("accepts only personal when creating an organization, and defaults to it", () => {
-    expect(createOrganizationSchema.parse({ name: "Mine" }).entityType).toBe("personal");
-    expect(createOrganizationSchema.parse({ name: "Mine", entityType: "personal" }).entityType).toBe("personal");
+    expect(createOrganizationSchema.parse({ name: "Mine", stateRegion: "CA" }).entityType).toBe("personal");
+    expect(createOrganizationSchema.parse({ name: "Mine", entityType: "personal", stateRegion: "CA" }).entityType).toBe("personal");
     for (const entityType of ["freelancer", "business"]) {
-      const result = createOrganizationSchema.safeParse({ name: "Mine", entityType });
+      const result = createOrganizationSchema.safeParse({ name: "Mine", entityType, stateRegion: "CA" });
       expect(result.success, entityType).toBe(false);
       expect(result.error?.issues[0]?.message).toBe(scope.PERSONAL_ONLY_MESSAGE);
     }
@@ -116,8 +116,8 @@ describe("the assistant", () => {
   const offered = launchScopeTools(all);
 
   it("still defines every tool — deferral removes nothing from the registry", () => {
-    // 41 defined; the assistant is offered 36 of them at launch.
-    expect(all).toHaveLength(41);
+    // 43 defined (checkAffordability and getNetWorth added); 38 offered at launch.
+    expect(all).toHaveLength(43);
     expect(offered).toHaveLength(all.length - Object.keys(DEFERRED_TOOLS).length);
   });
 
@@ -163,7 +163,7 @@ describe("the assistant", () => {
   });
 
   it("is a personal finance and personal tax assistant, whatever the workspace's stored type", () => {
-    const prompt = buildSystemPrompt({ country: "US", baseCurrency: "USD" });
+    const prompt = buildSystemPrompt({ country: "US", stateRegion: "CA", baseCurrency: "USD" });
     expect(AI_SYSTEM_PROMPT).toMatch(/personal finance and personal tax assistant/);
     expect(prompt).toContain(PERSONAL_CONTEXT);
     expect(prompt).not.toMatch(/freelanc|Entity type:|business workspace/i);

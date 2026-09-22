@@ -2,6 +2,7 @@ import type { Money } from "@/domain/money/money";
 import type { CurrencyCode } from "@/domain/money/currency";
 import type { FilingStatus, RuleSource, TaxJurisdiction } from "./rules/types";
 import type { CalculationStatus, RuleFallback } from "./rules/resolve-rule-set";
+import { supportedState } from "./supported-states";
 
 /**
  * The tax engine abstraction (DESIGN brief §12).
@@ -368,19 +369,12 @@ export function jurisdictionForCountry(countryCode: string): TaxJurisdiction | n
  */
 export function stateJurisdictionFor(countryCode: string, stateCode: string | null | undefined): TaxJurisdiction | null {
   if (countryCode !== "US" || !stateCode) return null;
-  const code = stateCode.trim().toUpperCase();
-  if (code === "CA") return "US_CA";
-  if (code === "NY") return "US_NY";
+  // Routed through the one list of supported states (./supported-states.ts).
   // Florida and Texas levy no individual income tax, and saying so is a
   // RESULT worth returning — routing them to null would make those
-  // workspaces indistinguishable from an unmodelled state.
-  if (code === "FL") return "US_FL";
-  if (code === "TX") return "US_TX";
-  // Arizona is registered but its 2026 figures are pending, so this routes to
-  // an engine that REFUSES with the reason. Returning null instead would say
-  // "Arizona isn't modelled", which is a different and less useful answer.
-  if (code === "AZ") return "US_AZ";
-  return null;
+  // workspaces indistinguishable from an unmodelled state. Arizona routes to
+  // an engine that REFUSES with the reason while its figures are pending.
+  return supportedState(stateCode.trim().toUpperCase())?.jurisdiction ?? null;
 }
 
 export type { FilingStatus, TaxJurisdiction };

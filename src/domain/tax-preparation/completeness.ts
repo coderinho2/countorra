@@ -1,5 +1,6 @@
 import { findRuleSet, isSupported } from "@/domain/tax/rules/registry";
 import { getTaxEngine, stateJurisdictionFor } from "@/domain/tax/register";
+import { isSupportedState } from "@/domain/tax/supported-states";
 import { resolveRulesFor } from "@/domain/tax/rules/resolve";
 import { factDefinition } from "./facts";
 import { validatePreparation, type ValidationInput } from "./validation";
@@ -46,6 +47,7 @@ export function assessCompleteness(input: CompletenessInput): CompletenessResult
     ...assessTaxYearSupport(input),
     ...assessIncomePresence(input),
     ...assessExpectedDocuments(input),
+    ...assessStateResidence(input),
     ...assessJurisdictions(input),
     ...assessPayments(input),
   ];
@@ -73,6 +75,40 @@ export function jurisdictionsFor(input: Pick<CompletenessInput, "countryCode" | 
   const state = stateJurisdictionFor(input.countryCode, input.taxpayer.primaryStateRegion);
   if (state) out.push(state);
   return out;
+}
+
+/**
+ * Whether Countorra knows the state this person lives in. Without it no state
+ * position is calculated — never a default state — and the person is told so
+ * and pointed at the one field that fixes it. The federal figure is
+ * unaffected, so this does not block. (Filing readiness has its own
+ * STATE_NOT_SET component and does not relay this issue a second time.)
+ */
+function assessStateResidence({ countryCode, taxpayer }: CompletenessInput): PreparationIssue[] {
+  if (countryCode !== "US") return [];
+  const code = taxpayer.primaryStateRegion;
+  if (isSupportedState(code)) return [];
+  return [
+    code
+      ? {
+          id: "STATE_NOT_SUPPORTED",
+          severity: "WARNING",
+          category: "JURISDICTION",
+          message: `${code} isn't a state Countorra supports, so no state tax is calculated.`,
+          affects: "organization.stateRegion",
+          blocking: false,
+          resolution: "Countorra supports California, Texas, Arizona, Florida and New York. The federal figure is unaffected.",
+        }
+      : {
+          id: "STATE_NOT_SET",
+          severity: "WARNING",
+          category: "JURISDICTION",
+          message: "Your state isn't set, so no state tax is calculated.",
+          affects: "organization.stateRegion",
+          blocking: false,
+          resolution: "Set the state you live in under Settings → Workspace. The federal figure is unaffected.",
+        },
+  ];
 }
 
 function assessEntityType({ entityType }: CompletenessInput): PreparationIssue[] {

@@ -100,13 +100,13 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Setting up your workspace",
         summary: "Name the workspace, add your accounts, and check the details tax preparation relies on.",
         body: [
-          "Onboarding asks one thing: what to call your workspace. After that, a useful order is:",
+          "Onboarding asks two things: what to call your workspace, and which state you live in — California, Texas, Arizona, Florida or New York. Your state selects the state tax rules Countorra uses. After that, a useful order is:",
         ],
         points: [
           "Add the accounts you want to track — a bank account, cash, a credit card, a wallet or anything else — each with its opening balance.",
           "Record transactions, or connect a bank on Premium or Business to import them.",
           "Review the starter categories in Settings → Categories so reports group spending the way you think about it.",
-          "Set your country and state in Settings → Workspace. Tax preparation reads the state from here every time it calculates.",
+          "Check your state in Settings → Workspace; you can change it there at any time. Tax preparation reads the state from here every time it calculates.",
         ],
         where: "Accounts · Settings → Workspace · Settings → Categories",
         keywords: ["setup", "onboarding", "first steps", "opening balance", "configure"],
@@ -523,7 +523,7 @@ export const HELP_FAQS: HelpFaq[] = [
     answer: ["From sign-up to your first answer:"],
     points: [
       "Create an account and confirm your email address.",
-      "Name your personal workspace.",
+      "Name your personal workspace and choose the state you live in.",
       "Add your accounts, then record transactions — or, on Premium and Business, connect a bank through Plaid to import them.",
       "Read the Overview, Insights and Reports.",
       "Ask Countorra questions, and confirm any change it proposes.",

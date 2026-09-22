@@ -23,6 +23,9 @@ import { getProfile } from "@/server/db/repositories/profiles";
 import { getOrganization } from "@/server/db/repositories/organizations";
 import { parseSearchQuery } from "@/domain/search/query-parser";
 import { calculateCaliforniaSdi, getTaxEngine, jurisdictionForCountry, stateJurisdictionFor } from "@/domain/tax/register";
+import { stateContextFor } from "@/domain/tax/supported-states";
+import { assessAffordability } from "@/domain/financial/affordability";
+import { calculateNetWorth } from "@/domain/financial/net-worth";
 import type { FilingStatus } from "@/domain/tax/rules/types";
 import { recordTaxCalculation } from "@/server/db/repositories/tax-calculations";
 import { findLivePreparationCase, recordFact } from "@/server/db/repositories/tax-preparation";
@@ -230,6 +233,63 @@ async function detectRecurringExpenses(client: Client, ctx: ToolContext) {
     confidence: p.confidence,
     label: p.confidence >= 0.8 ? "Likely recurring" : "Possibly recurring",
   }));
+}
+
+/**
+ * The cash-flow projection shared by forecastCashFlow and checkAffordability,
+ * so the two can never disagree about the same future.
+ */
+async function projectCashFlow(client: Client, ctx: ToolContext, horizonDays: number) {
+  const currency = await baseCurrencyOf(client, ctx);
+  const [balances, period, recurringPatterns] = await Promise.all([
+    listAccountBalances(client, ctx.organizationId),
+    periodSummaryFor(client, ctx, { from: monthsAgoISO(3), to: todayISO(), currency }),
+    getRecurringPatterns(client, ctx.organizationId, 6),
+  ]);
+
+  // A forecast that starts from a fabricated opening balance is wrong
+  // at every point on the curve, so the starting figure obeys the same
+  // base-currency rule as everything else (FIN-03).
+  const inBase = balances.filter((b) => isSupportedCurrency(b.currency));
+  const balanceTotal = totalInBaseCurrency(
+    inBase.map((b) => ({ amountMinor: b.balanceMinor, currency: b.currency as CurrencyCode })),
+    currency,
+  );
+  const averageDailyNet = Math.round(period.summary.profit.amountMinor / 90);
+
+  // Money owed to the person on sent invoices — only while invoicing is
+  // part of the product (src/domain/organizations/launch-scope.ts).
+  const { invoices } = isModuleEnabled("invoicing") ? await listInvoices(client, { organizationId: ctx.organizationId, status: "sent" }) : { invoices: [] };
+  const upcomingInvoices = invoices.filter((i) => i.dueDate).map((i) => ({ dueDate: i.dueDate!, totalMinor: i.totalMinor }));
+
+  const points = forecastCashFlow({
+    startDate: todayISO(),
+    currentBalanceMinor: balanceTotal.total.amountMinor,
+    currency,
+    averageDailyNetMinor: averageDailyNet,
+    recurringPatterns,
+    upcomingInvoices,
+    horizonDays,
+  });
+  return {
+    points,
+    currency,
+    excluded: [...balanceTotal.excluded, ...period.summary.excluded],
+    averageMonthlyExpenseMinor: Math.round(period.summary.expense.amountMinor / 3),
+    accountCount: inBase.filter((b) => b.currency === currency).length,
+  };
+}
+
+/** The workspace's state of residence as a tool result states it. */
+function stateResidenceFor(organization: { country: string; stateRegion: string | null }) {
+  const context = stateContextFor(organization);
+  if (context.status === "SET") {
+    return { status: "SET" as const, code: context.state.code, name: context.state.name, leviesIndividualIncomeTax: context.state.leviesIndividualIncomeTax };
+  }
+  if (context.status === "UNSUPPORTED") {
+    return { status: "UNSUPPORTED" as const, code: context.code, message: "This state is not supported, so no state tax was calculated. The user can choose a supported state in Settings." };
+  }
+  return { status: "NOT_SET" as const, message: "No state is set for this workspace, so no state tax was calculated. The user can set it in Settings." };
 }
 
 export function createToolRegistry(client: Client): AITool[] {
@@ -950,6 +1010,9 @@ export function createToolRegistry(client: Client): AITool[] {
           // absence is explicit rather than a gap the model fills from
           // memory.
           state: stateOutcome,
+          // Where the workspace lives, from its settings — so a null `state`
+          // can be told apart: no income tax, not set, or not supported.
+          stateResidence: stateResidenceFor(organization),
           authoritative: true,
           guidance:
             "Explain these figures using ONLY the values in this result. Do not restate rates, thresholds, deductions or tax-table values from memory, do not recompute anything, and mention that items under notModelled were not included. The top-level figures are FEDERAL; anything under `state` is a separate state liability — present them as two amounts, never silently summed. If `state` is null, say that no state calculation was produced rather than estimating one. If `state.supported` is false, repeat its message and its details and do not supply the missing figures yourself. A reason of `rules_not_published` means the state's own tax authority has not released a figure the calculation needs — Arizona 2026 is that case: its rate is settled at a flat 2.5% but the standard deduction the calculation depends on has not been published, and no Arizona instruction authorises using an earlier year's. Say what is missing and who publishes it; do NOT answer from general knowledge, do NOT substitute another year, another state, or the federal figures, and do NOT present a rate as an answer when there is no deduction to apply it to. A reason of `unsupported_tax_year` is different again: that year was never modelled at all. RULE-YEAR DISCLOSURE, WHICH IS NOT OPTIONAL: check `calculationStatus` on every supported result. When it is ESTIMATE_USING_LATEST_PUBLISHED_RULES, the figure was produced by a DIFFERENT tax year's published rules than the one asked about — `requestedTaxYear` is what was asked, `taxYear` is what ran, and `fallback.notice` is the sentence to relay. You must NOT say 'your <requestedTaxYear> tax is $X'. Say instead that the complete <requestedTaxYear> rules have not been published, that this estimate uses the latest fully published rules (<taxYear>), and that it is not a filed-return calculation for the requested year. Also state which method produced it when asked. `calculationMethod` is CA_TAX_TABLE for California taxable income at or below $100,000 and CA_RATE_SCHEDULE above it; for New York it is NY_RATE_SCHEDULE at or below $107,650 of New York adjusted gross income and NY_TAX_COMPUTATION_WORKSHEET above it, where New York's published worksheets recapture the benefit of the lower brackets so that the tax is higher than the brackets alone would give. These are different published calculations and give different answers; never describe one as an approximation of the other, and never compute any of them yourself. New York State tax excludes New York City tax, Yonkers tax and the MCTMT — say so rather than implying the figure covers a New York City resident's whole liability. A `calculationMethod` of NO_INDIVIDUAL_INCOME_TAX means the state levies no individual personal income tax at all — Florida and Texas. Report the $0 from the result and say it follows from that state's own tax law, NOT that the calculation was unavailable, skipped or unsupported, and NOT that taxable income happened to be zero. Do not state a rate for such a state and do not describe it as having a 0% bracket, because no bracket exists. Name the state whose result you are giving: Florida's basis and Texas's basis are different laws that happen to reach the same figure. And do not let '$0 individual income tax' become '$0 state tax': Florida levies corporate income tax and sales and use tax; Texas levies franchise tax, sales and use tax and much else, with property tax levied locally; and residents of both owe federal tax in full. Never present a state's franchise tax, corporate tax, sales tax or property tax as its individual income tax, or vice versa — the notModelled list names what the result excludes, and you should too when the question invites the confusion.",
@@ -1266,45 +1329,101 @@ export function createToolRegistry(client: Client): AITool[] {
       inputSchema: { type: "object", properties: { horizonDays: { type: "number" } } },
       parseInput: (i) => z.object({ horizonDays: z.number().int().min(1).max(180).optional() }).parse(i ?? {}),
       execute: async (input: { horizonDays?: number }, ctx: ToolContext) => {
-        const currency = await baseCurrencyOf(client, ctx);
-        const [balances, period, recurringPatterns] = await Promise.all([
-          listAccountBalances(client, ctx.organizationId),
-          periodSummaryFor(client, ctx, { from: monthsAgoISO(3), to: todayISO(), currency }),
-          getRecurringPatterns(client, ctx.organizationId, 6),
-        ]);
-
-        // A forecast that starts from a fabricated opening balance is wrong
-        // at every point on the curve, so the starting figure obeys the same
-        // base-currency rule as everything else (FIN-03).
-        const balanceTotal = totalInBaseCurrency(
-          balances.filter((b) => isSupportedCurrency(b.currency)).map((b) => ({ amountMinor: b.balanceMinor, currency: b.currency as CurrencyCode })),
-          currency,
-        );
-        const currentBalance = balanceTotal.total.amountMinor;
-        const averageDailyNet = Math.round(period.summary.profit.amountMinor / 90);
-
-        // Money owed to the person on sent invoices — only while invoicing is
-        // part of the product (src/domain/organizations/launch-scope.ts).
-        const { invoices } = isModuleEnabled("invoicing") ? await listInvoices(client, { organizationId: ctx.organizationId, status: "sent" }) : { invoices: [] };
-        const upcomingInvoices = invoices.filter((i) => i.dueDate).map((i) => ({ dueDate: i.dueDate!, totalMinor: i.totalMinor }));
-
-        const points = forecastCashFlow({
-          startDate: todayISO(),
-          currentBalanceMinor: currentBalance,
-          currency,
-          averageDailyNetMinor: averageDailyNet,
-          recurringPatterns,
-          upcomingInvoices,
-          horizonDays: Math.min(input.horizonDays ?? 30, 180),
-        });
+        const { points, currency, excluded } = await projectCashFlow(client, ctx, Math.min(input.horizonDays ?? 30, 180));
         const lowest = lowestProjectedPoint(points);
         return withScope(
           {
             points: points.map((p) => ({ date: p.date, balance: moneyResult(p.balance), basis: p.basis })),
             lowestProjected: lowest ? { date: lowest.date, balance: moneyResult(lowest.balance) } : null,
           },
-          describeExclusions([...balanceTotal.excluded, ...period.summary.excluded], currency),
+          describeExclusions(excluded, currency),
         );
+      },
+    },
+    {
+      name: "checkAffordability",
+      description:
+        "Answers 'can I afford this?' for a one-time purchase or a new monthly payment, deterministically. It projects the balance with the same model as forecastCashFlow, takes the payment out on and after its date, and returns a verdict — AFFORDABLE, TIGHT (stays above zero but under a one-month safety buffer), NOT_AFFORDABLE (goes below zero) or INSUFFICIENT_DATA — with the lowest projected balance with and without it. Supply only the amount, whether it is one_time or monthly, and optionally the date of the first payment and the horizon. Never compute or adjust the verdict or any figure yourself; explain the result and relay its assumptions. It is not financial advice.",
+      operationMode: "calculate",
+      inputSchema: {
+        type: "object",
+        properties: {
+          amount: { type: "string" },
+          frequency: { type: "string", enum: ["one_time", "monthly"] },
+          firstPaymentOn: { type: "string", description: "YYYY-MM-DD, today or later. Defaults to today." },
+          horizonDays: { type: "number", description: "How far ahead to check, 7-180 days. Defaults to 60, or 90 for a monthly payment." },
+        },
+        required: ["amount", "frequency"],
+      },
+      parseInput: (i) =>
+        z
+          .object({
+            amount: majorAmountArg,
+            frequency: z.enum(["one_time", "monthly"]),
+            firstPaymentOn: z.iso.date().optional(),
+            horizonDays: z.number().int().min(7).max(180).optional(),
+          })
+          .parse(i),
+      execute: async (input: { amount: string; frequency: "one_time" | "monthly"; firstPaymentOn?: string; horizonDays?: number }, ctx: ToolContext) => {
+        const horizon = input.horizonDays ?? (input.frequency === "monthly" ? 90 : 60);
+        const { points, currency, excluded, averageMonthlyExpenseMinor, accountCount } = await projectCashFlow(client, ctx, horizon);
+        const today = todayISO();
+        const firstPaymentOn = input.firstPaymentOn && input.firstPaymentOn > today ? input.firstPaymentOn : today;
+        const result = assessAffordability({
+          currency,
+          forecast: points,
+          amountMinor: minorUnits(input.amount, currency),
+          frequency: input.frequency === "monthly" ? "MONTHLY" : "ONE_TIME",
+          firstPaymentOn,
+          safetyBufferMinor: averageMonthlyExpenseMinor,
+          accountCount,
+        });
+        return withScope(
+          {
+            verdict: result.verdict,
+            reason: result.reason,
+            currentBalance: result.currentBalance ? moneyResult(result.currentBalance) : null,
+            lowestWithout: result.lowestWithout ? { date: result.lowestWithout.date, balance: moneyResult(result.lowestWithout.balance) } : null,
+            lowestWith: result.lowestWith ? { date: result.lowestWith.date, balance: moneyResult(result.lowestWith.balance) } : null,
+            headroomAboveBuffer: result.headroomAboveBuffer ? moneyResult(result.headroomAboveBuffer) : null,
+            safetyBuffer: moneyResult(result.safetyBuffer),
+            totalPaidInWindow: moneyResult(result.totalPaidInWindow),
+            paymentsInWindow: result.paymentsInWindow,
+            firstPaymentOn,
+            windowEnd: result.windowEnd,
+            assumptions: result.assumptions,
+            authoritative: true,
+            guidance: "Give the verdict and the figures exactly as returned. Do not recalculate, round differently or add your own estimate. Mention the assumptions that matter to the question. This is a projection, not a guarantee and not financial advice.",
+          },
+          describeExclusions(excluded, currency),
+        );
+      },
+    },
+    {
+      name: "getNetWorth",
+      description:
+        "Returns the workspace's net worth — assets minus liabilities — from the balances of its accounts in Countorra, calculated deterministically, with each account listed as an asset or a liability. Credit card balances owed and overdrafts are liabilities. Property, vehicles, investments and loans that are not accounts in Countorra are not included; the result says so in `coverage`, and you must too. Never compute net worth yourself.",
+      operationMode: "calculate",
+      inputSchema: { type: "object", properties: {} },
+      execute: async (_input: unknown, ctx: ToolContext) => {
+        const currency = await baseCurrencyOf(client, ctx);
+        const [accounts, balances] = await Promise.all([listAccounts(client, ctx.organizationId), listAccountBalances(client, ctx.organizationId)]);
+        const balanceById = new Map(balances.map((b) => [b.accountId, b.balanceMinor]));
+        const result = calculateNetWorth(
+          accounts.map((a) => ({ id: a.id, name: a.name, kind: a.kind, currency: a.currency, isArchived: a.isArchived, balanceMinor: balanceById.get(a.id) ?? a.openingBalanceMinor })),
+          currency,
+        );
+        const line = (l: (typeof result.assets)[number]) => ({ accountId: l.accountId, name: l.name, kind: l.kind, amount: moneyResult(l.amount) });
+        return {
+          netWorth: moneyResult(result.netWorth),
+          totalAssets: moneyResult(result.totalAssets),
+          totalLiabilities: moneyResult(result.totalLiabilities),
+          assets: result.assets.map(line),
+          liabilities: result.liabilities.map(line),
+          excluded: result.excluded,
+          coverage: result.coverage,
+          authoritative: true,
+        };
       },
     },
     {

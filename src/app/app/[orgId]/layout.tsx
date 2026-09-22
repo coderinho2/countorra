@@ -8,6 +8,8 @@ import { Topbar } from "@/components/app-shell/topbar";
 import { ViewTransition } from "@/components/app-shell/view-transition";
 import { ContextBar } from "@/components/app-shell/context-bar";
 import { productEntityType } from "@/domain/organizations/launch-scope";
+import { stateContextFor } from "@/domain/tax/supported-states";
+import { StateNotice } from "@/components/app-shell/state-notice";
 
 /**
  * Every route under /app/[orgId]/* is authorized here, once, via
@@ -35,6 +37,9 @@ export default async function OrganizationLayout({ children, params }: { childre
   // freelancer or business before the launch scope narrowed — is shown and
   // navigated as personal (src/domain/organizations/launch-scope.ts).
   const entityType = productEntityType(organization.entityType);
+  // Read from the workspace row on every request — the same value the tax
+  // engines route on (src/domain/tax/supported-states.ts).
+  const stateContext = stateContextFor(organization);
 
   return (
     // A real application frame: the shell is exactly the viewport tall and
@@ -76,9 +81,11 @@ export default async function OrganizationLayout({ children, params }: { childre
         <ContextBar
           workspace={organization.name}
           entity={entityType}
+          state={stateContext.status === "SET" ? stateContext.state.code : "Not set"}
           currency={organization.baseCurrency}
           asOf={new Date().toISOString().slice(0, 10)}
         />
+        {stateContext.status !== "SET" && <StateNotice orgId={orgId} context={stateContext} />}
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ViewTransition>{children}</ViewTransition>
         </main>

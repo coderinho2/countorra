@@ -7,14 +7,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ErrorState } from "@/components/ui/error-state";
 import { BrandMark } from "@/components/marketing/brand-mark";
+import { SUPPORTED_STATES } from "@/domain/tax/supported-states";
 
 /**
- * Onboarding: one step, one decision — what to call your workspace.
+ * Onboarding: one screen — what to call your workspace, and where you live.
  *
  * Countorra launches for personal finances only
- * (src/domain/organizations/launch-scope.ts), so there is nothing to choose
- * between. The workspace is personal; the server sets that, and the form
- * does not send an entity type at all.
+ * (src/domain/organizations/launch-scope.ts), so there is no workspace type to
+ * choose; the server sets it, and the form does not send one.
+ *
+ * The state is required and has no default. It selects the workspace's state
+ * tax rules (src/domain/tax/supported-states.ts), and the server validates it
+ * against the supported list — the radios are a convenience, not the check.
+ * Nothing sensitive is asked: no SSN, no tax ID, no bank details.
  */
 export default function OnboardingPage() {
   const [state, formAction, pending] = useActionState(completeOnboarding, {});
@@ -42,19 +47,35 @@ export default function OnboardingPage() {
             <Input id="name" name="name" required autoFocus placeholder="e.g. My Finances" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="country">Country</Label>
-              <Input id="country" name="country" defaultValue="US" maxLength={2} className="uppercase" />
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-[14px] font-medium text-text-primary">What state do you live in?</legend>
+            <p id="state-help" className="text-[13px] leading-5 text-text-secondary">
+              Your state helps Countorra personalize your tax calculations and financial guidance — the state tax rules we use, your tax
+              organization, and state-specific insights. You can change it later in Settings.
+            </p>
+            <input type="hidden" name="country" value="US" />
+            <div role="radiogroup" aria-describedby="state-help" className="mt-1 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {SUPPORTED_STATES.map((option) => (
+                <label
+                  key={option.code}
+                  className="border-border bg-surface has-checked:border-accent has-checked:bg-accent-subtle hover:border-border-strong has-focus-visible:outline-accent flex cursor-pointer items-center gap-3 rounded-sm border px-3 py-2.5 text-[14px] text-text-primary transition-colors duration-[var(--duration-fast)] ease-out has-focus-visible:outline-2 has-focus-visible:outline-offset-2"
+                >
+                  <input type="radio" name="stateRegion" value={option.code} required className="accent-(--color-gold) size-4 shrink-0" />
+                  <span className="flex-1">{option.name}</span>
+                  <span className="font-numeric text-[12px] text-text-tertiary">{option.code}</span>
+                </label>
+              ))}
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="baseCurrency">Currency</Label>
-              <Input id="baseCurrency" name="baseCurrency" defaultValue="USD" maxLength={3} className="uppercase" />
-            </div>
+          </fieldset>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="baseCurrency">Currency</Label>
+            <Input id="baseCurrency" name="baseCurrency" defaultValue="USD" maxLength={3} className="uppercase" />
           </div>
 
           <p className="text-[13px] text-text-secondary">
-            You can add your state, categories and tax details later in Settings — nothing else is needed to get started.
+            Countorra supports residents of California, Texas, Arizona, Florida and New York. Categories and tax details can be added later in
+            Settings.
           </p>
 
           <Button type="submit" size="lg" disabled={pending} className="mt-2 w-full justify-center">

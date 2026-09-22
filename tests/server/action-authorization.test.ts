@@ -190,6 +190,7 @@ function organizationForm() {
   form.set("organizationId", ORG);
   form.set("name", "Renamed Org");
   form.set("country", "US");
+  form.set("stateRegion", "CA");
   form.set("baseCurrency", "USD");
   return form;
 }

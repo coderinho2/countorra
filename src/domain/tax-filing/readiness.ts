@@ -82,7 +82,11 @@ const SCOPE_RANK: Record<FilingIssueScope, number> = { FILING: 0, FEDERAL: 1, ST
 const DEDUCTION_KEYS = new Set<string>(["ITEMIZED_DEDUCTIONS_TOTAL", "MORTGAGE_INTEREST", "CHARITABLE_CONTRIBUTIONS"]);
 
 /** Preparation issues the filing layer restates in its own, more specific terms. */
-const RESTATED_PREPARATION_ISSUES = new Set<string>(["MULTI_STATE_REVIEW_REQUIRED", "FEDERAL_PAYMENTS_UNKNOWN", "TAXPAYER_IDENTIFIER_NOT_ON_FILE"]);
+const RESTATED_PREPARATION_ISSUES = new Set<string>(["MULTI_STATE_REVIEW_REQUIRED", "FEDERAL_PAYMENTS_UNKNOWN", "TAXPAYER_IDENTIFIER_NOT_ON_FILE",
+  // The state component reports a missing or unsupported state itself.
+  "STATE_NOT_SET",
+  "STATE_NOT_SUPPORTED",
+]);
 
 function product(rule: string): FilingIssueProvenance {
   return { kind: "COUNTORRA_PRODUCT_RULE", rule };

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateOrganizationAction } from "@/server/settings/actions";
 import type { Organization } from "@/domain/organizations/types";
+import { SUPPORTED_STATES, isSupportedState } from "@/domain/tax/supported-states";
 
 export function OrganizationForm({ organization, canEdit }: { organization: Organization; canEdit: boolean }) {
   const [state, formAction, pending] = useActionState(updateOrganizationAction, {});
@@ -27,18 +28,30 @@ export function OrganizationForm({ organization, canEdit }: { organization: Orga
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="stateRegion">State</Label>
-          {/* Optional, and left blank for the nine states with no individual
-              income tax. Nothing is inferred from the country — a workspace
-              is only in a state tax regime because it says it is. */}
-          <Input
-            id="stateRegion"
+          {/* One of the supported states (src/domain/tax/supported-states.ts);
+              the server validates it again and audits a change. Keyed on the
+              saved value: a React 19 form action resets the form, and Radix
+              Select would otherwise restore the value it mounted with. An
+              unset or no-longer-supported state shows the placeholder, never
+              a guess. */}
+          <Select
+            key={organization.stateRegion ?? "unset"}
             name="stateRegion"
-            defaultValue={organization.stateRegion ?? ""}
-            maxLength={2}
-            className="uppercase"
-            placeholder="—"
+            defaultValue={isSupportedState(organization.stateRegion) ? organization.stateRegion : undefined}
             disabled={!canEdit}
-          />
+            required
+          >
+            <SelectTrigger id="stateRegion">
+              <SelectValue placeholder="Choose your state" />
+            </SelectTrigger>
+            <SelectContent>
+              {SUPPORTED_STATES.map((option) => (
+                <SelectItem key={option.code} value={option.code}>
+                  {option.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="baseCurrency">Currency</Label>

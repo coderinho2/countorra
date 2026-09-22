@@ -13,8 +13,11 @@ export interface OnboardingActionResult {
 }
 
 /**
- * Progressive onboarding (product spec §23): collects only a name and
- * country/currency — no giant form, no tax/legal detail up front.
+ * Progressive onboarding (product spec §23): collects only a name, the US
+ * state the person lives in, and a currency — no giant form, no identity or
+ * tax detail up front. The state is required: it selects the workspace's
+ * state tax rules (src/domain/tax/supported-states.ts), and it is validated
+ * here and constrained in the database (0052), never defaulted.
  *
  * Every workspace is personal at launch (src/domain/organizations/launch-
  * scope.ts). The entity type is no longer asked for: the schema defaults it
@@ -37,6 +40,7 @@ export async function completeOnboarding(_prev: OnboardingActionResult, formData
     name: formData.get("name"),
     entityType: formData.get("entityType") || undefined,
     country: formData.get("country") || undefined,
+    stateRegion: formData.get("stateRegion") ?? undefined,
     baseCurrency: formData.get("baseCurrency") || undefined,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
@@ -59,6 +63,7 @@ export async function completeOnboarding(_prev: OnboardingActionResult, formData
     name: parsed.data.name,
     entityType: parsed.data.entityType,
     country: parsed.data.country,
+    stateRegion: parsed.data.stateRegion,
     baseCurrency: parsed.data.baseCurrency,
     createdBy: user.id,
   });

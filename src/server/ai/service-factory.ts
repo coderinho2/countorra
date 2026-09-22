@@ -6,6 +6,7 @@ import { AIService } from "@/domain/ai/service";
 import { createToolRegistry } from "@/domain/ai/tools/registry";
 import { launchScopeTools } from "@/domain/ai/tools/launch-scope";
 import type { Organization } from "@/domain/organizations/types";
+import { stateContextFor } from "@/domain/tax/supported-states";
 
 /**
  * The one place an AIService gets constructed — keeps provider selection
@@ -51,16 +52,38 @@ export const PERSONAL_CONTEXT =
   "This is a personal finances workspace: one person's or one household's own money and personal taxes. Prioritize spending, subscriptions, saving, affordability, personal cash flow and the individual tax return. Where a tool reports profit or margin, say net and savings rate. Countorra does not keep books for a business, issue invoices or prepare business tax returns — if asked, say so plainly.";
 
 /**
+ * The state-of-residence line. Authoritative: it comes from the workspace row
+ * the server loaded for this request, which is the same value the tax tools
+ * route on — so the person never has to tell the assistant where they live,
+ * and cannot talk it into another state's rules either.
+ */
+export function stateContextLine(organization: Pick<Organization, "country" | "stateRegion">): string {
+  const context = stateContextFor(organization);
+  if (context.status === "SET") {
+    const { state } = context;
+    const rules = state.leviesIndividualIncomeTax
+      ? `federal rules plus ${state.name} individual income tax rules (${state.individualReturn})`
+      : `federal rules only — ${state.name} levies no individual income tax, so there is no ${state.name} income tax to calculate; say so rather than calling it unsupported`;
+    return `State of residence: ${state.name} (${state.code}), from the workspace's settings. Tax tools apply ${rules}. Do not ask the user which state they live in, and do not apply another state's rules even if asked — they change it in Settings.`;
+  }
+  if (context.status === "UNSUPPORTED") {
+    return `State of residence: ${context.code}, which Countorra does not support. No state tax is calculated. Countorra supports California, Texas, Arizona, Florida and New York; the user can choose one in Settings → Workspace. Never assume a state.`;
+  }
+  return "State of residence: not set. No state tax is calculated until it is. If state tax matters to the question, say so and point the user to Settings → Workspace. Never assume a state.";
+}
+
+/**
  * Builds the per-request system prompt: the shared rules above, plus
- * context about *this* workspace — country, currency — fetched server-side
- * from the authenticated request's own organization row
+ * context about *this* workspace — country, state, currency — fetched
+ * server-side from the authenticated request's own organization row
  * (src/server/ai/actions.ts), never from anything the client sends.
  */
-export function buildSystemPrompt(organization: Pick<Organization, "country" | "baseCurrency">): string {
+export function buildSystemPrompt(organization: Pick<Organization, "country" | "stateRegion" | "baseCurrency">): string {
   return `${AI_SYSTEM_PROMPT}
 
 Context for this conversation:
 - Workspace: ${PERSONAL_CONTEXT}
 - Country: ${organization.country}
+- ${stateContextLine(organization)}
 - Base currency: ${organization.baseCurrency} — state amounts in this currency unless the user's data is in another one.`;
 }
