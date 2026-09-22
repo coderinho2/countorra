@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support";
 
 /**
  * Root error boundary — everything outside /app/[orgId], which has its own.
@@ -45,7 +46,11 @@ export default function RootError({ error, reset }: { error: Error & { digest?: 
         />
         {error.digest && (
           <p className="text-[13px] text-text-tertiary">
-            Reference <span className="font-numeric">{error.digest}</span> — quote this if you contact support.
+            Reference <span className="font-numeric">{error.digest}</span> — quote this if you write to{" "}
+            <a href={SUPPORT_MAILTO} className="text-text-secondary underline underline-offset-2 transition-colors duration-100 ease-out hover:text-text-primary">
+              {SUPPORT_EMAIL}
+            </a>
+            .
           </p>
         )}
       </div>

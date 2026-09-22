@@ -2,6 +2,7 @@ import Link from "next/link";
 import { EnvelopeSimple } from "@phosphor-icons/react/dist/ssr/EnvelopeSimple";
 import { Button } from "@/components/ui/button";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support";
 
 /** DESIGN.md §16 empty-state pattern: one small line icon, an H4
  *  headline, one line of explanatory text, exactly one primary action —
@@ -26,6 +27,17 @@ export default function VerifyEmailPage() {
           Open the link in this browser to be signed in straight away. Opened on another device, it still confirms your address — you&apos;ll just sign in afterwards.
         </p>
       </div>
+
+      {/* The dead end for "it never arrived": the one place a person has no
+          action left in the product. A quiet line, not a second button — the
+          empty state still has exactly one action. */}
+      <p className="max-w-[320px] text-[13px] text-text-tertiary">
+        Nothing after a few minutes? Check your spam folder, or write to{" "}
+        <a href={SUPPORT_MAILTO} className="underline underline-offset-2 transition-colors duration-100 ease-out hover:text-text-secondary">
+          {SUPPORT_EMAIL}
+        </a>
+        .
+      </p>
 
       <Button asChild variant="secondary" size="md" className="mt-1">
         <Link href="/login">Back to sign in</Link>

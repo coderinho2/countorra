@@ -14,6 +14,8 @@
  * `LEGAL_PLACEHOLDERS_REMAINING` is what the launch checklist reads.
  */
 
+import { SUPPORT_EMAIL } from "@/lib/support";
+
 export interface LegalFacts {
   /** e.g. "Countorra, Inc." — the entity that provides the service. */
   legalEntityName: string | null;
@@ -32,7 +34,7 @@ export interface LegalFacts {
 export const LEGAL_FACTS: LegalFacts = {
   legalEntityName: null,
   registeredAddress: null,
-  contactEmail: null,
+  contactEmail: SUPPORT_EMAIL,
   governingLaw: null,
   refundPolicy: null,
   taxOnPrices: null,

@@ -110,11 +110,20 @@ describe("support contact", () => {
   });
 
   it("carries no address but that one, and nothing from the source template", () => {
+    // src/lib/support.ts is where the literal lives; the rest display it.
+    // Every surface that offers a way to write to Countorra is read here, so
+    // a second, unmonitored address cannot appear on any of them.
     const sources = [
+      read("src/lib/support.ts"),
       read("src/components/help/help-content.ts"),
       read("src/app/help/page.tsx"),
       read("src/components/ui/faqs-01.tsx"),
       read("src/components/help/help-search.tsx"),
+      read("src/components/marketing/marketing-footer.tsx"),
+      read("src/app/error.tsx"),
+      read("src/app/(auth)/verify-email/page.tsx"),
+      read("src/app/app/[orgId]/error.tsx"),
+      read("src/domain/legal/facts.ts"),
     ].join("\n");
     const addresses = new Set(sources.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) ?? []);
     expect([...addresses]).toEqual(["support@countorra.com"]);

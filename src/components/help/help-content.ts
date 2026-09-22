@@ -19,8 +19,7 @@
  *   bank connections      PLAID-INTEGRATION.md
  */
 
-export const SUPPORT_EMAIL = "support@countorra.com";
-export const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
+export { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support";
 
 export interface HelpLink {
   label: string;

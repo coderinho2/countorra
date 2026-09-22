@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support";
 
 /**
  * Route-level error boundary for every screen inside an organization.
@@ -46,7 +47,11 @@ export default function OrganizationError({ error, reset }: { error: Error & { d
         />
         {error.digest && (
           <p className="text-[13px] text-text-tertiary">
-            Reference <span className="font-numeric">{error.digest}</span> — quote this if you contact support.
+            Reference <span className="font-numeric">{error.digest}</span> — quote this if you write to{" "}
+            <a href={SUPPORT_MAILTO} className="text-text-secondary underline underline-offset-2 transition-colors duration-100 ease-out hover:text-text-primary">
+              {SUPPORT_EMAIL}
+            </a>
+            .
           </p>
         )}
       </div>

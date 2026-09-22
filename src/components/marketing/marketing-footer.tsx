@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getMarketingAuthState } from "@/server/marketing/auth-state";
+import { SUPPORT_MAILTO } from "@/lib/support";
 import { BrandMark } from "./brand-mark";
 
 const COLUMNS = [
@@ -23,6 +24,7 @@ const COLUMNS = [
     label: "Resources",
     links: [
       { label: "Help Centre", href: "/help" },
+      { label: "Contact support", href: SUPPORT_MAILTO },
       { label: "How it works", href: "/resources#how-it-works" },
       { label: "Guides", href: "/resources#guides" },
     ],
@@ -39,7 +41,9 @@ const COLUMNS = [
 /** Every link is a route or anchor that actually exists — no
  *  Documentation/Changelog/Status placeholders with nothing behind
  *  them. Privacy and Terms are real pages (honest placeholders, not
- *  dead links); see src/app/privacy and src/app/terms. */
+ *  dead links); see src/app/privacy and src/app/terms. The one
+ *  exception is Contact support, a mailto: for the address in
+ *  src/lib/support.ts — a real mailbox, which is the same standard. */
 /** The Account column's links share one treatment; naming it keeps the
  *  signed-in and signed-out branches from drifting apart. */
 const ACCOUNT_LINK = "text-[13px] text-text-secondary transition-colors duration-100 ease-out hover:text-text-primary";
