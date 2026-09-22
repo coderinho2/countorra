@@ -9,7 +9,9 @@ import { format, fromMajorUnits, type Money, percentageOf, money as makeMoney } 
 import { describeExclusions, totalInBaseCurrency } from "@/domain/money/aggregate";
 import { isSupportedCurrency, type CurrencyCode } from "@/domain/money/currency";
 import { getCategoryTotals, getTransactionTotals, listTransactions, getTransaction, categorizeTransaction, createTransaction } from "@/server/db/repositories/transactions";
-import { listAccounts, listAccountBalances } from "@/server/db/repositories/accounts";
+import { getAccount, listAccounts, listAccountBalances } from "@/server/db/repositories/accounts";
+import { listBankFedAccounts } from "@/server/db/repositories/bank-connections";
+import { acceptsManualEntry, MANUAL_ENTRY_REFUSAL } from "@/domain/accounts/manual-entry";
 import { listCategories } from "@/server/db/repositories/categories";
 import { listMerchants } from "@/server/db/repositories/merchants";
 import { listCustomers } from "@/server/db/repositories/customers";
@@ -280,6 +282,19 @@ async function projectCashFlow(client: Client, ctx: ToolContext, horizonDays: nu
   };
 }
 
+/**
+ * The Plaid-first rule (src/domain/accounts/manual-entry.ts) at the AI
+ * boundary: a confirmed draft can only land in a cash or wallet account no
+ * bank connection feeds. Returned as a result the model relays, rather than a
+ * database error; the database refuses it regardless (0053).
+ */
+async function refuseManualEntry(client: Client, ctx: ToolContext, accountId: string) {
+  const [account, fed] = await Promise.all([getAccount(client, accountId), listBankFedAccounts(client, ctx.organizationId)]);
+  if (!account || account.organizationId !== ctx.organizationId) return { refused: true as const, reason: "ACCOUNT_NOT_FOUND", message: "That account isn't in this workspace." };
+  if (!acceptsManualEntry(account, new Set(fed.keys()))) return { refused: true as const, reason: "BANK_SOURCED_ACCOUNT", message: MANUAL_ENTRY_REFUSAL };
+  return null;
+}
+
 /** The workspace's state of residence as a tool result states it. */
 function stateResidenceFor(organization: { country: string; stateRegion: string | null }) {
   const context = stateContextFor(organization);
@@ -436,7 +451,8 @@ export function createToolRegistry(client: Client): AITool[] {
     },
     {
       name: "createDraftTransaction",
-      description: "Creates a transaction (income or expense). Requires confirmation before it takes effect.",
+      description:
+        "Records a CASH or WALLET transaction (income or expense) the user describes. Bank and credit card transactions come only from the bank connection — never create one for a bank, credit card or bank-connected account, and never invent a transaction the user did not describe. Requires confirmation before it takes effect.",
       operationMode: "write",
       inputSchema: {
         type: "object",
@@ -466,8 +482,10 @@ export function createToolRegistry(client: Client): AITool[] {
       execute: async (
         input: { accountId: string; kind: "income" | "expense"; amount: string; currency: CurrencyCode; occurredOn: string; description?: string; categoryId?: string },
         ctx: ToolContext,
-      ) =>
-        createTransaction(client, {
+      ) => {
+        const refused = await refuseManualEntry(client, ctx, input.accountId);
+        if (refused) return refused;
+        return createTransaction(client, {
           organizationId: ctx.organizationId,
           accountId: input.accountId,
           kind: input.kind,
@@ -478,11 +496,13 @@ export function createToolRegistry(client: Client): AITool[] {
           categoryId: input.categoryId,
           source: "ai",
           createdBy: ctx.userId,
-        }),
+        });
+      },
     },
     {
       name: "createDraftExpense",
-      description: "Creates an expense transaction. Requires confirmation before it takes effect.",
+      description:
+        "Records a CASH or WALLET expense the user describes. Bank and credit card transactions come only from the bank connection — never create one for a bank, credit card or bank-connected account. Requires confirmation before it takes effect.",
       operationMode: "write",
       inputSchema: {
         type: "object",
@@ -510,8 +530,10 @@ export function createToolRegistry(client: Client): AITool[] {
       execute: async (
         input: { accountId: string; amount: string; currency: CurrencyCode; occurredOn: string; description?: string; categoryId?: string },
         ctx: ToolContext,
-      ) =>
-        createTransaction(client, {
+      ) => {
+        const refused = await refuseManualEntry(client, ctx, input.accountId);
+        if (refused) return refused;
+        return createTransaction(client, {
           organizationId: ctx.organizationId,
           accountId: input.accountId,
           kind: "expense",
@@ -522,7 +544,8 @@ export function createToolRegistry(client: Client): AITool[] {
           categoryId: input.categoryId,
           source: "ai",
           createdBy: ctx.userId,
-        }),
+        });
+      },
     },
 
     // ── Income / expenses / cash flow ────────────────────────────────

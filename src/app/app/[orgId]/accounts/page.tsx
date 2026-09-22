@@ -8,7 +8,11 @@ import { createClient } from "@/server/supabase/server";
 import { getOrganization } from "@/server/db/repositories/organizations";
 import Link from "next/link";
 import { listAccounts, listAccountBalances, type Account } from "@/server/db/repositories/accounts";
-import { listBankFedAccounts } from "@/server/db/repositories/bank-connections";
+import { listBankFedAccounts, type BankFeed } from "@/server/db/repositories/bank-connections";
+import { bankProviderConfigured } from "@/server/bank-connections/providers";
+import { ConnectionStatusBadge } from "@/components/bank-connections/status-badges";
+import { CONNECTION_STATUSES, type ConnectionStatus } from "@/domain/bank-connections/types";
+import { Button } from "@/components/ui/button";
 import { NewAccountDialog } from "@/components/accounts/new-account-dialog";
 import { PageHeader, PageMeta, PageMetaItem, PageShell } from "@/components/ui/page-header";
 import { Panel } from "@/components/ui/panel";
@@ -72,7 +76,12 @@ export default async function AccountsPage({ params }: { params: Promise<{ orgId
         eyebrow="Records"
         title="Accounts"
         description="Every account this workspace tracks, and what is in each of them right now."
-        actions={<NewAccountDialog organizationId={orgId} currency={organization.baseCurrency} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <NewAccountDialog organizationId={orgId} currency={organization.baseCurrency} />
+            <ConnectBankAction organizationId={orgId} />
+          </div>
+        }
         meta={
           accounts.length > 0 ? (
             <PageMeta>
@@ -89,7 +98,10 @@ export default async function AccountsPage({ params }: { params: Promise<{ orgId
 
       {accounts.length === 0 ? (
         <Panel className="p-0">
-          <EmptyState title="No accounts yet" description="Add a bank account, cash, or credit card to start tracking transactions." />
+          <EmptyState
+            title="No accounts yet"
+            description="Connect your bank to bring in your checking, savings and credit card accounts with their transactions. Cash you track yourself can be added by hand."
+          />
         </Panel>
       ) : (
         <div className="flex flex-col gap-8">
@@ -138,8 +150,8 @@ function AccountRow({
   organizationId: string;
   account: Account;
   balance: ReturnType<typeof money>;
-  /** The bank account feeding this one, if a person linked one. */
-  bankFeed: { displayName: string; mask: string | null } | null;
+  /** The bank connection importing into this account, if there is one. */
+  bankFeed: BankFeed | null;
 }) {
   // The opening balance is already on the account record and was never shown.
   // A statement states where an account started as well as where it stands —
@@ -164,13 +176,21 @@ function AccountRow({
             <>
               <span aria-hidden="true" className="h-2.5 w-px bg-border-subtle" />
               <Link href={`/app/${organizationId}/bank-connections`} className="underline-offset-2 hover:text-text-secondary hover:underline">
-                Fed by {bankFeed.displayName}
+                {bankFeed.institutionName ? `${bankFeed.institutionName} · ` : ""}
+                {bankFeed.displayName}
                 {bankFeed.mask ? ` ••${bankFeed.mask}` : ""}
               </Link>
+              <span aria-hidden="true" className="h-2.5 w-px bg-border-subtle" />
+              <span>{bankFeed.lastSuccessfulSyncAt ? `Synced ${bankFeed.lastSuccessfulSyncAt.slice(0, 10)}` : "Not synced yet"}</span>
             </>
           )}
         </span>
       </div>
+      {bankFeed && isConnectionStatus(bankFeed.connectionStatus) && (
+        <span className="ml-auto shrink-0">
+          <ConnectionStatusBadge status={bankFeed.connectionStatus} />
+        </span>
+      )}
       {/* The balance is the point of the row, so it carries the
           Numeric-prominent scale (DESIGN.md §4) — bigger than the account's
           own name, which is only a label for it. */}
@@ -178,3 +198,28 @@ function AccountRow({
     </li>
   );
 }
+
+function isConnectionStatus(value: string): value is ConnectionStatus {
+  return (CONNECTION_STATUSES as readonly string[]).includes(value);
+}
+
+/**
+ * The primary way accounts arrive: connecting a bank. Offered only when this
+ * deployment has a bank provider configured — otherwise it says so plainly,
+ * rather than showing a button that leads nowhere.
+ */
+function ConnectBankAction({ organizationId }: { organizationId: string }) {
+  if (!bankProviderConfigured()) {
+    return (
+      <Link href={`/app/${organizationId}/bank-connections`} className="text-[13px] text-text-secondary underline-offset-2 hover:text-text-primary hover:underline">
+        Bank connections aren&apos;t available yet
+      </Link>
+    );
+  }
+  return (
+    <Button asChild>
+      <Link href={`/app/${organizationId}/bank-connections`}>Connect bank</Link>
+    </Button>
+  );
+}
+

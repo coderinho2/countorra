@@ -45,6 +45,13 @@ export interface ReportContext {
   userId?: string;
   /** Next's server-generated correlation id, where one exists. */
   digest?: string;
+  /**
+   * The request's correlation id (`x-request-id`, set by src/proxy.ts, or
+   * derived from Vercel's `x-vercel-id` on routes the proxy skips). Lets one
+   * request be followed from the route through the database and provider
+   * calls it made to the response — see `requestIdFrom`.
+   */
+  requestId?: string;
   /** Small, non-sensitive facts — a tool name, a rule name, an HTTP status.
    *  Passed through `redact`, so a mistake here is contained rather than
    *  published. */
@@ -208,6 +215,34 @@ export interface ReportedError {
   errorName: string;
   detail: Record<string, unknown>;
   at: string;
+  /** Deployment environment (Vercel's production / preview / development),
+   *  so a preview's errors never read as production's. */
+  environment: string;
+  /** Short commit of the running build, where the host provides it — what
+   *  was deployed when this happened. */
+  release: string | null;
+}
+
+/** Where this process is running, from the host — never configured by hand. */
+export function runtimeIdentity(): { environment: string; release: string | null } {
+  return {
+    environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "development",
+    release: process.env.VERCEL_GIT_COMMIT_SHA ? process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7) : null,
+  };
+}
+
+/**
+ * The correlation id for a request, from headers the platform or the proxy
+ * set. An incoming `x-request-id` is accepted only in a narrow shape, because
+ * it lands in log lines: anything else is replaced, never echoed.
+ */
+const REQUEST_ID_SHAPE = /^[A-Za-z0-9:_-]{8,128}$/;
+export function requestIdFrom(headers: { get(name: string): string | null }): string {
+  for (const name of ["x-request-id", "x-vercel-id"]) {
+    const value = headers.get(name);
+    if (value && REQUEST_ID_SHAPE.test(value)) return value;
+  }
+  return crypto.randomUUID();
 }
 
 /**
@@ -258,7 +293,17 @@ export function __resetObservabilitySinksForTests(): void {
 function writeToConsole(record: ReportedError): void {
   const line =
     process.env.NODE_ENV === "production"
-      ? [JSON.stringify({ severity: record.severity, scope: record.scope, event: record.errorName, detail: record.detail, at: record.at })]
+      ? [
+          JSON.stringify({
+            severity: record.severity,
+            scope: record.scope,
+            event: record.errorName,
+            environment: record.environment,
+            release: record.release,
+            detail: record.detail,
+            at: record.at,
+          }),
+        ]
       : [`[${record.scope}] ${record.errorName}`, record.detail];
 
   if (record.severity === "error") console.error(...line);
@@ -293,9 +338,11 @@ export function reportError(error: unknown, context: ReportContext, severity: Se
       ...(context.organizationId ? { organizationId: context.organizationId } : {}),
       ...(context.userId ? { userId: context.userId } : {}),
       ...(context.digest ? { digest: context.digest } : {}),
+      ...(context.requestId ? { requestId: context.requestId } : {}),
       hint,
     },
     at: new Date().toISOString(),
+    ...runtimeIdentity(),
   };
 
   emit(record);
@@ -313,10 +360,36 @@ export function reportEvent(name: string, context: ReportContext, severity: Seve
       ...redact(context.detail),
       ...(context.organizationId ? { organizationId: context.organizationId } : {}),
       ...(context.userId ? { userId: context.userId } : {}),
+      ...(context.requestId ? { requestId: context.requestId } : {}),
     },
     at: new Date().toISOString(),
+    ...runtimeIdentity(),
   };
 
   emit(record);
   return record;
+}
+
+/**
+ * Times one call to a dependency — the database, a provider, the model — and
+ * records how it went: `dependency.call` with its duration and outcome on
+ * success, and the error (also with its duration) on failure, which is then
+ * rethrown unchanged. The measurement is real wall-clock time for this call;
+ * nothing is sampled or estimated.
+ */
+export async function measureDependency<T>(
+  dependency: "database" | "anthropic" | "stripe" | "plaid" | "email",
+  operation: string,
+  context: ReportContext,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const started = performance.now();
+  try {
+    const result = await fn();
+    reportEvent("dependency.call", { ...context, detail: { ...context.detail, dependency, operation, outcome: "ok", durationMs: Math.round(performance.now() - started) } });
+    return result;
+  } catch (error) {
+    reportError(error, { ...context, detail: { ...context.detail, dependency, operation, outcome: "failed", durationMs: Math.round(performance.now() - started) } });
+    throw error;
+  }
 }

@@ -98,13 +98,13 @@ export const HELP_CATEGORIES: HelpCategory[] = [
       {
         id: "setting-up-your-workspace",
         title: "Setting up your workspace",
-        summary: "Name the workspace, add your accounts, and check the details tax preparation relies on.",
+        summary: "Name the workspace, connect your bank, and check the details tax preparation relies on.",
         body: [
           "Onboarding asks two things: what to call your workspace, and which state you live in — California, Texas, Arizona, Florida or New York. Your state selects the state tax rules Countorra uses. After that, a useful order is:",
         ],
         points: [
-          "Add the accounts you want to track — a bank account, cash, a credit card, a wallet or anything else — each with its opening balance.",
-          "Record transactions, or connect a bank on Premium or Business to import them.",
+          "Connect your bank (Premium and Business) so your bank and credit card accounts, and their transactions, come straight from it — they can't be typed in by hand.",
+          "Add cash or a wallet you track yourself as a cash account, with its opening balance, and record its transactions by hand.",
           "Review the starter categories in Settings → Categories so reports group spending the way you think about it.",
           "Check your state in Settings → Workspace; you can change it there at any time. Tax preparation reads the state from here every time it calculates.",
         ],
@@ -183,8 +183,9 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         title: "Accounts",
         summary: "Bank accounts, cash, credit cards and wallets, each with a balance.",
         body: [
-          "An account is anywhere money is kept: a bank account, cash, a credit card, a wallet, or something else. Its balance is its opening balance plus every transaction recorded in it.",
-          "An account you no longer use can be archived. Bank connections add transactions to an account you choose; they never create accounts themselves.",
+          "An account is anywhere money is kept: a bank account, a credit card, cash or a wallet. Its balance is its opening balance plus every transaction in it.",
+          "Bank and credit card accounts and their transactions come from connecting your bank, so they can't be added or entered by hand. Cash and wallet accounts are the ones you add and fill in yourself. Accounts you entered by hand before stay, with their history, and can be connected to your bank so new transactions arrive from it.",
+          "An account you no longer use can be archived.",
         ],
         where: "Accounts",
         keywords: ["account", "balance", "bank account", "credit card", "cash", "archive"],
@@ -524,7 +525,7 @@ export const HELP_FAQS: HelpFaq[] = [
     points: [
       "Create an account and confirm your email address.",
       "Name your personal workspace and choose the state you live in.",
-      "Add your accounts, then record transactions — or, on Premium and Business, connect a bank through Plaid to import them.",
+      "Connect your bank through Plaid on Premium and Business to bring in your accounts and transactions; add cash you track yourself by hand.",
       "Read the Overview, Insights and Reports.",
       "Ask Countorra questions, and confirm any change it proposes.",
       "Prepare your personal tax return for a supported U.S. tax year.",

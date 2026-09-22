@@ -28,6 +28,7 @@ runbook), [SECURITY-RATE-LIMITING.md](SECURITY-RATE-LIMITING.md).
 8. [Stripe](#8-stripe)
 9. [Email](#9-email)
 10. [Error tracking and logs](#10-error-tracking-and-logs)
+    * [10a. Health checks and operational reporting](#10a-health-checks-and-operational-reporting)
 11. [Database migrations](#11-database-migrations)
 12. [Deploying](#12-deploying)
 13. [Rollback](#13-rollback)
@@ -520,7 +521,8 @@ shaped text. Unhandled route errors reach the same boundary through
 never the concrete path or headers.
 
 **Out of the box** (no vendor): records go to the console. In production each
-record is **one JSON line** (`severity`, `scope`, `event`, `detail`, `at`), so
+record is **one JSON line** (`severity`, `scope`, `event`, `environment`,
+`release`, `detail`, `at`), so
 Vercel's runtime logs are searchable by `event`, and a **Vercel log drain**
 (Project → Settings → Log Drains) can forward them to any log or alerting
 service with no code change.
@@ -542,6 +544,41 @@ Events worth alerting on (all `warning` or `error`):
 | `billing.webhook_signature_rejected` | Wrong `STRIPE_WEBHOOK_SECRET`, or forged calls. |
 | `billing.webhook_unknown_price` | A subscription on a price this deployment does not know. |
 | any `scope: "route"` error | An unhandled server error. |
+| `dependency.call` / errors with `detail.dependency` | Every timed call to the database, Anthropic, Stripe or Plaid carries `durationMs` and `outcome` — alert on a rising failure rate or duration. |
+| `operations.unauthorized` | Someone is trying the operations endpoint without the token. |
+
+**Correlation.** Every proxied request gets an `x-request-id` (Vercel's own
+`x-vercel-id` where present), returned on the response and recorded on the
+records that request produced — the route error, the AI turn and its model
+call, readiness checks — as `detail.requestId`. A user quoting that header can
+be traced through the logs. Server actions outside the AI path do not yet
+attach it; that is a gap, not a guarantee.
+
+**What the application cannot see.** Function concurrency, cold starts,
+regions, Postgres CPU, connections, disk and replication are platform metrics:
+read them in Vercel (Observability, Logs) and Supabase (Reports, Database
+health). Nothing in Countorra reports them, and nothing pretends to.
+
+---
+
+## 10a. Health checks and operational reporting
+
+| Endpoint | Who | Answers |
+| --- | --- | --- |
+| `GET /api/health` | anyone | `{"status":"ok"}` — liveness only; checks no dependency, so it never fails because the database is down. |
+| `GET /api/health/ready` | anyone | `{"status":"ready"}` with 200, or `"not_ready"` with 503: configuration whole, database reachable within 3 s, schema at the version this build expects. Cached 15 s per instance. |
+| `GET /api/health/ready` with `Authorization: Bearer $OPERATIONS_TOKEN` | operators | The same, plus which check failed, database latency, expected vs actual schema version, and which integrations are configured (booleans — never a value). |
+| `GET /api/operations/summary?hours=24` with the token | operators | Counts over the window (1–168 h): Stripe and bank webhooks by outcome, active sync jobs, sync runs, bank connections by status, emails, security events by severity, AI requests and AI actions by status. Counts only — no identifiers, amounts or text. 404 when no token is configured. |
+
+Set `OPERATIONS_TOKEN` (≥ 32 characters, `openssl rand -base64 48`) in
+Production to turn the detailed views on. Point an external uptime monitor
+(Better Stack, UptimeRobot, Checkly…) at `/api/health/ready` — Countorra
+cannot alert on its own outage. Both health routes bypass the proxy, so they
+do not depend on Supabase Auth.
+
+**Schema drift.** `EXPECTED_SCHEMA_VERSION` in `src/server/operations/health.ts`
+must equal `operations_schema_version()` in the latest migration; readiness is
+503 until the database has been migrated to match. Bump both together.
 
 ---
 
@@ -563,7 +600,13 @@ Rules:
   keeps working while the new schema lands.
 * Run the full suite first: `tests/rls` applies every migration to a real
   Postgres (PGlite) and exercises RLS against it.
-* After pushing, confirm `migration list` shows local = remote with no gaps.
+* After pushing, confirm `migration list` shows local = remote with no gaps,
+  and that `/api/health/ready` (with the token) reports `schema.ok: true`.
+* **Exception — 0053 (Plaid-first ledger)** restricts writes the previous build
+  still offers (its "Add account" dialog offers bank accounts). Deploy the code
+  **first**, then push 0053: the new code works against the old schema
+  (readiness shows the schema behind until the push), while the old code
+  against the new schema would show people refusals.
 * For Preview's separate project, push the same migrations there.
 
 ---

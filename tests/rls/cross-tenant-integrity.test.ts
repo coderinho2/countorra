@@ -35,9 +35,9 @@ beforeEach(async () => {
   const b = await db.query(`insert into organizations (name, entity_type, created_by) values ('Org B', 'personal', $1) returning id`, [owner]);
   orgB = (b.rows[0] as { id: string }).id;
 
-  const accA = await db.query(`insert into accounts (organization_id, name, kind, currency) values ($1, 'A Checking', 'bank', 'USD') returning id`, [orgA]);
+  const accA = await db.query(`insert into accounts (organization_id, name, kind, currency) values ($1, 'A Checking', 'cash', 'USD') returning id`, [orgA]);
   accountA = (accA.rows[0] as { id: string }).id;
-  const accB = await db.query(`insert into accounts (organization_id, name, kind, currency) values ($1, 'B Checking', 'bank', 'USD') returning id`, [orgB]);
+  const accB = await db.query(`insert into accounts (organization_id, name, kind, currency) values ($1, 'B Checking', 'cash', 'USD') returning id`, [orgB]);
   accountB = (accB.rows[0] as { id: string }).id;
 
   const cat = await db.query(`insert into transaction_categories (organization_id, kind, name) values ($1, 'expense', 'B Category') returning id`, [orgB]);

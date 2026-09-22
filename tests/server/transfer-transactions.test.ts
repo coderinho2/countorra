@@ -96,7 +96,8 @@ const state = vi.hoisted(() => {
   process.env.NEXT_PUBLIC_APP_URL ??= "http://localhost:3000";
   return {
     created: [] as Record<string, unknown>[],
-    accounts: [] as { id: string; organizationId: string; currency: string; name: string }[],
+    accounts: [] as { id: string; organizationId: string; currency: string; name: string; kind: string }[],
+    connected: new Set<string>(),
   };
 });
 
@@ -129,6 +130,10 @@ vi.mock("@/server/db/repositories/accounts", () => ({
   listAccounts: async (_c: unknown, organizationId: string) => state.accounts.filter((a) => a.organizationId === organizationId),
 }));
 
+vi.mock("@/server/db/repositories/bank-connections", () => ({
+  listBankFedAccounts: async () => new Map([...state.connected].map((id) => [id, { displayName: "Bank", mask: null, institutionName: null, connectionStatus: "ACTIVE", lastSuccessfulSyncAt: null }])),
+}));
+
 vi.mock("@/server/db/repositories/transactions", () => ({
   createTransaction: async (_c: unknown, input: Record<string, unknown>) => {
     state.created.push(input);
@@ -157,11 +162,13 @@ function form(overrides: Record<string, string> = {}) {
 beforeEach(() => {
   state.created = [];
   state.accounts = [
-    { id: CHECKING, organizationId: ORG, currency: "USD", name: "Checking" },
-    { id: SAVINGS, organizationId: ORG, currency: "USD", name: "Savings" },
-    { id: EUR_ACCOUNT, organizationId: ORG, currency: "EUR", name: "Euro account" },
-    { id: OTHER_ORG_ACCOUNT, organizationId: "99999999-9999-4999-8999-999999999999", currency: "USD", name: "Rival checking" },
+    // Hand-entered accounts are cash or wallet (Plaid-first, 0053).
+    { id: CHECKING, organizationId: ORG, currency: "USD", name: "Checking", kind: "cash" },
+    { id: SAVINGS, organizationId: ORG, currency: "USD", name: "Savings", kind: "wallet" },
+    { id: EUR_ACCOUNT, organizationId: ORG, currency: "EUR", name: "Euro account", kind: "cash" },
+    { id: OTHER_ORG_ACCOUNT, organizationId: "99999999-9999-4999-8999-999999999999", currency: "USD", name: "Rival checking", kind: "cash" },
   ];
+  state.connected = new Set();
 });
 
 describe("creating a transfer", () => {
@@ -252,3 +259,31 @@ describe("the existing financial guarantee still holds", () => {
     expect(withTransfer).toEqual(without);
   });
 });
+
+describe("Plaid-first: bank transactions come from the bank", () => {
+  const MANUAL_ENTRY = /come from your bank connection/;
+
+  it.each(["bank", "credit_card", "other"])("refuses hand entry into a %s account, and writes nothing", async (kind) => {
+    state.accounts[0].kind = kind;
+    expect((await createTransactionAction({}, form({ kind: "expense", transferAccountId: "" }))).error).toMatch(MANUAL_ENTRY);
+    expect(state.created).toEqual([]);
+  });
+
+  it("refuses a transfer INTO a bank account from cash", async () => {
+    state.accounts[1].kind = "bank";
+    expect((await createTransactionAction({}, form())).error).toMatch(MANUAL_ENTRY);
+    expect(state.created).toEqual([]);
+  });
+
+  it("refuses hand entry into a cash account once a bank connection imports into it", async () => {
+    state.connected = new Set([CHECKING]);
+    expect((await createTransactionAction({}, form({ kind: "expense", transferAccountId: "" }))).error).toMatch(MANUAL_ENTRY);
+    expect(state.created).toEqual([]);
+  });
+
+  it("still records a cash expense", async () => {
+    expect((await createTransactionAction({}, form({ kind: "expense", transferAccountId: "" }))).error).toBeUndefined();
+    expect(state.created).toHaveLength(1);
+  });
+});
+

@@ -38,7 +38,8 @@ vi.mock("@supabase/ssr", () => ({
   },
 }));
 
-vi.mock("@/lib/observability", () => ({
+vi.mock("@/lib/observability", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/observability")>()),
   reportEvent: (...args: unknown[]) => void state.events.push(args),
 }));
 

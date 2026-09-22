@@ -7,6 +7,7 @@ import { createToolRegistry } from "@/domain/ai/tools/registry";
 import { launchScopeTools } from "@/domain/ai/tools/launch-scope";
 import type { Organization } from "@/domain/organizations/types";
 import { stateContextFor } from "@/domain/tax/supported-states";
+import { reportError } from "@/lib/observability";
 
 /**
  * The one place an AIService gets constructed — keeps provider selection
@@ -24,7 +25,7 @@ export function createAiService(client: SupabaseClient<Database>): AIService {
   // without this seam a failing tool would be silent to operators as well as
   // safe for users — the wrong half of the trade.
   return new AIService(provider, tools, (toolName, error) => {
-    console.error(`[ai] tool "${toolName}" failed:`, error instanceof Error ? `${error.name}: ${error.message}` : error);
+    reportError(error, { scope: "ai", detail: { step: "tool", toolName } });
   });
 }
 

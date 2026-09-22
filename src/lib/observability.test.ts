@@ -260,3 +260,28 @@ describe("where records go", () => {
     expect(console.error).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("correlation, environment and dependency timing", () => {
+  it("accepts a well-formed request id and replaces anything else", async () => {
+    const { requestIdFrom } = await import("./observability");
+    const headers = (value: string | null) => ({ get: (name: string) => (name === "x-request-id" ? value : null) });
+    expect(requestIdFrom(headers("iad1::abc-123_def"))).toBe("iad1::abc-123_def");
+    expect(requestIdFrom(headers("evil {x:1} newline"))).not.toContain("evil");
+    expect(requestIdFrom(headers(null))).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("stamps every record with the environment and release, and carries the request id", async () => {
+    const { reportEvent } = await import("./observability");
+    const record = reportEvent("test.event", { scope: "route", requestId: "req-abcdefgh" });
+    expect(record.environment).toBeTruthy();
+    expect(record).toHaveProperty("release");
+    expect(record.detail.requestId).toBe("req-abcdefgh");
+  });
+
+  it("times a dependency call and rethrows its failure unchanged", async () => {
+    const { measureDependency } = await import("./observability");
+    await expect(measureDependency("stripe", "checkout", { scope: "billing" }, async () => 42)).resolves.toBe(42);
+    const failure = new Error("boom");
+    await expect(measureDependency("stripe", "checkout", { scope: "billing" }, async () => Promise.reject(failure))).rejects.toBe(failure);
+  });
+});

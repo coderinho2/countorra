@@ -37,11 +37,11 @@ export function NewTransactionDialog({ organizationId, accounts, categories, cur
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>Add transaction</Button>
+        <Button variant="secondary">Record cash transaction</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add transaction</DialogTitle>
+          <DialogTitle>Record a cash transaction</DialogTitle>
         </DialogHeader>
         <form action={formAction} className="flex flex-col gap-4">
           <input type="hidden" name="organizationId" value={organizationId} />
@@ -146,7 +146,7 @@ export function NewTransactionDialog({ organizationId, accounts, categories, cur
               Cancel
             </Button>
             <Button type="submit" disabled={pending}>
-              {pending ? "Adding…" : "Add transaction"}
+              {pending ? "Recording…" : "Record transaction"}
             </Button>
           </DialogFooter>
         </form>

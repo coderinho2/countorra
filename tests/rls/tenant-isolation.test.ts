@@ -64,7 +64,7 @@ describe("organization data isolation", () => {
   it("a member cannot read another organization's transactions", async () => {
     await db.asUser(userA);
     const account = await db.query(
-      `insert into accounts (organization_id, name, kind, currency) values ($1, 'Checking', 'bank', 'RON') returning id`,
+      `insert into accounts (organization_id, name, kind, currency) values ($1, 'Checking', 'cash', 'RON') returning id`,
       [orgA],
     );
     const accountId = row<{ id: string }>(account.rows).id;
@@ -93,7 +93,7 @@ describe("organization data isolation", () => {
     await db.asUser(userB);
     await expect(
       db.query(
-        `insert into accounts (organization_id, name, kind, currency) values ($1, 'Hostile', 'bank', 'RON')`,
+        `insert into accounts (organization_id, name, kind, currency) values ($1, 'Hostile', 'cash', 'RON')`,
         [orgA],
       ),
     ).rejects.toThrow();

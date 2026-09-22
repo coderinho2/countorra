@@ -336,14 +336,38 @@ describe("the origin of a ledger transaction", () => {
     await expect(
       db.query(`insert into transactions (organization_id, account_id, kind, amount_minor, currency, occurred_on, source) values ($1, $2, 'income', 500, 'USD', '2026-09-01', 'bank_sync')`, [orgA, usdA]),
     ).rejects.toThrow(/bank_sync/);
+    // A bank-connected account takes no hand-entered transactions at all (0053)…
+    await expect(
+      db.query(`insert into transactions (organization_id, account_id, kind, amount_minor, currency, occurred_on, source) values ($1, $2, 'income', 500, 'USD', '2026-09-01', 'manual')`, [orgA, usdA]),
+    ).rejects.toThrow(/only cash and wallet transactions can be entered by hand/);
+    // …so a hand-entered one lives in a cash account, and still cannot be relabelled as bank-sourced.
+    const cash = one<{ id: string }>(await db.query(`insert into accounts (organization_id, name, kind, currency) values ($1, 'Cash', 'cash', 'USD') returning id`, [orgA])).id;
     const manual = one<{ id: string }>(
-      await db.query(`insert into transactions (organization_id, account_id, kind, amount_minor, currency, occurred_on, source) values ($1, $2, 'income', 500, 'USD', '2026-09-01', 'manual') returning id`, [orgA, usdA]),
+      await db.query(`insert into transactions (organization_id, account_id, kind, amount_minor, currency, occurred_on, source) values ($1, $2, 'income', 500, 'USD', '2026-09-01', 'manual') returning id`, [orgA, cash]),
     ).id;
     await expect(db.query(`update transactions set source = 'bank_sync' where id = $1`, [manual])).rejects.toThrow(/bank_sync/);
     await expect(db.query(`update transactions set source = 'manual' where id = $1`, [imported])).rejects.toThrow(/bank_sync/);
     // A person may still correct the imported transaction itself.
     await db.query(`update transactions set description = 'Team coffee', is_reviewed = true where id = $1`, [imported]);
     expect(await scalar(`select description from transactions where id = $1`, [imported])).toBe("Team coffee");
+  });
+});
+
+describe("a connected account takes transactions only from the bank (0053)", () => {
+  it("accepts hand entry into a cash account until a bank connection imports into it", async () => {
+    await db.asUser(OWNER_A);
+    const cashUsd = one<{ id: string }>(await db.query(`insert into accounts (organization_id, name, kind, currency) values ($1, 'Everyday', 'cash', 'USD') returning id`, [orgA])).id;
+    const entry = () =>
+      db.query(`insert into transactions (organization_id, account_id, kind, amount_minor, currency, occurred_on, source) values ($1, $2, 'expense', 700, 'USD', '2026-09-02', 'manual')`, [orgA, cashUsd]);
+    await entry();
+
+    const connectionId = await connection(orgA);
+    const { runId } = await startRun(orgA, connectionId);
+    await ingest(orgA, runId, { before: null, after: "c1", accounts: [externalAccount()], transactions: [tx()] });
+    expect(await link(orgA, await linkedAccountId(connectionId), cashUsd)).toBe("APPLIED");
+
+    await db.asUser(OWNER_A);
+    await expect(entry()).rejects.toThrow(/only cash and wallet transactions can be entered by hand/);
   });
 });
 

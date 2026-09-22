@@ -619,14 +619,57 @@ type ReviewItemRow = {
 };
 
 /** Countorra accounts currently fed by a live bank account, for the Accounts page. */
-export async function listBankFedAccounts(client: Client, organizationId: string): Promise<Map<string, { displayName: string; mask: string | null }>> {
+/** What the accounts page shows about the bank connection feeding an account. */
+export interface BankFeed {
+  displayName: string;
+  mask: string | null;
+  institutionName: string | null;
+  connectionStatus: string;
+  lastSuccessfulSyncAt: string | null;
+}
+
+/**
+ * Accounts an ACTIVE bank link imports into (import mode IMPORT, not
+ * detached) — the same definition the database uses for "connected"
+ * (account_accepts_manual_entry, 0053) — with the connection's state. Read
+ * under the caller's RLS; no provider identifier or cursor leaves this query.
+ */
+export async function listBankFedAccounts(client: Client, organizationId: string): Promise<Map<string, BankFeed>> {
   const { data, error } = await client
     .from("bank_linked_accounts")
-    .select("account_id, display_name, mask")
+    .select("account_id, connection_id, display_name, mask")
     .eq("organization_id", organizationId)
+    .eq("import_mode", "IMPORT")
     .not("account_id", "is", null)
     .is("detached_at", null)
     .limit(500);
   if (error) throw error;
-  return new Map((data as unknown as { account_id: string; display_name: string; mask: string | null }[]).map((row) => [row.account_id, { displayName: row.display_name, mask: row.mask }]));
+  const links = data as unknown as { account_id: string; connection_id: string; display_name: string; mask: string | null }[];
+  if (links.length === 0) return new Map();
+
+  const { data: connections, error: connectionError } = await client
+    .from("bank_connections")
+    .select("id, institution_name, status, last_successful_sync_at")
+    .eq("organization_id", organizationId)
+    .in("id", [...new Set(links.map((l) => l.connection_id))]);
+  if (connectionError) throw connectionError;
+  const byId = new Map(
+    (connections as unknown as { id: string; institution_name: string | null; status: string; last_successful_sync_at: string | null }[]).map((c) => [c.id, c]),
+  );
+
+  return new Map(
+    links.map((row) => {
+      const connection = byId.get(row.connection_id);
+      return [
+        row.account_id,
+        {
+          displayName: row.display_name,
+          mask: row.mask,
+          institutionName: connection?.institution_name ?? null,
+          connectionStatus: connection?.status ?? "ERROR",
+          lastSuccessfulSyncAt: connection?.last_successful_sync_at ?? null,
+        },
+      ];
+    }),
+  );
 }

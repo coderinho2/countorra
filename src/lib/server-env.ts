@@ -67,6 +67,14 @@ const serverSchema = z.object({
    */
   CRON_SECRET: z.string().min(1).optional(),
   /**
+   * Bearer token for the INTERNAL operations endpoints — the detailed
+   * readiness report and the operational summary (src/app/api/health/ready,
+   * src/app/api/operations/summary). Unset means those detailed views are
+   * off: the public health checks still answer, with a status and nothing
+   * else. Server-only; never sent to a browser.
+   */
+  OPERATIONS_TOKEN: z.string().min(32).optional(),
+  /**
    * Optional dead-man's-switch URL (healthchecks.io, Cronitor, Better Stack
    * heartbeats — any service that alerts when pings STOP). The worker route
    * GETs it after each successful invocation, with no body. HTTPS only. Often
@@ -140,6 +148,7 @@ export function serverEnv() {
       PLAID_REDIRECT_URI: process.env.PLAID_REDIRECT_URI || undefined,
       BANK_SYNC_WORKER_SECRET: process.env.BANK_SYNC_WORKER_SECRET || undefined,
       CRON_SECRET: process.env.CRON_SECRET || undefined,
+      OPERATIONS_TOKEN: process.env.OPERATIONS_TOKEN || undefined,
       BANK_SYNC_HEARTBEAT_URL: process.env.BANK_SYNC_HEARTBEAT_URL || undefined,
       // Both spellings are accepted, singular first. The keyset holds several
       // keys (rotation), so operators reasonably write the plural, and getting

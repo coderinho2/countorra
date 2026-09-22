@@ -17,6 +17,8 @@ import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { createTransactionSchema } from "@/validation/schemas/transaction";
 import { fromMajorUnits } from "@/domain/money/money";
 import type { CurrencyCode } from "@/domain/money/currency";
+import { listBankFedAccounts } from "@/server/db/repositories/bank-connections";
+import { acceptsManualEntry, MANUAL_ENTRY_REFUSAL } from "@/domain/accounts/manual-entry";
 import { enforceRateLimit } from "@/server/security/rate-limit";
 
 export interface TransactionActionResult {
@@ -48,12 +50,22 @@ export async function createTransactionAction(_prev: TransactionActionResult, fo
 
   const client = await createClient();
 
+  // Plaid-first (src/domain/accounts/manual-entry.ts): hand entry only into
+  // cash and wallet accounts no bank connection feeds — on both sides of a
+  // transfer. The database refuses anything else from a browser session
+  // (0053); this turns that refusal into a sentence.
+  const [accounts, fed] = await Promise.all([listAccounts(client, parsed.data.organizationId), listBankFedAccounts(client, parsed.data.organizationId)]);
+  const connected = new Set(fed.keys());
+  for (const id of [parsed.data.accountId, ...(parsed.data.transferAccountId ? [parsed.data.transferAccountId] : [])]) {
+    const account = accounts.find((a) => a.id === id);
+    if (account && !acceptsManualEntry(account, connected)) return { error: MANUAL_ENTRY_REFUSAL };
+  }
+
   // Both sides of a transfer must be accounts of THIS organization. RLS
   // already refuses a foreign account, but it refuses by returning nothing —
   // which would surface as a confusing constraint error rather than an
   // explanation. Checking here names the problem.
   if (parsed.data.kind === "transfer") {
-    const accounts = await listAccounts(client, parsed.data.organizationId);
     const source = accounts.find((a) => a.id === parsed.data.accountId);
     const destination = accounts.find((a) => a.id === parsed.data.transferAccountId);
 

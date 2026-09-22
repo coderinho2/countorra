@@ -41,9 +41,12 @@ type ErrorWithDigest = Error & { digest?: string };
 
 export const onRequestError: Instrumentation.onRequestError = (error, request, context) => {
   const digest = typeof (error as ErrorWithDigest | undefined)?.digest === "string" ? (error as ErrorWithDigest).digest : undefined;
+  const header = request.headers["x-request-id"];
+  const requestId = typeof header === "string" ? header : undefined;
   reportError(error, {
     scope: "route",
     digest,
+    requestId,
     detail: {
       routePath: context.routePath,
       routeType: context.routeType,

@@ -30,7 +30,7 @@ vi.mock("@supabase/ssr", () => ({
     return { auth: { getUser: async () => ({ data: { user: null } }) } };
   },
 }));
-vi.mock("@/lib/observability", () => ({ reportEvent: () => {} }));
+vi.mock("@/lib/observability", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/observability")>()), reportEvent: () => {} }));
 
 const { sessionCookieOptions } = await import("@/lib/security/session-cookies");
 const { proxy } = await import("@/proxy");
@@ -201,5 +201,25 @@ describe("the response CSP travels with every proxied response", () => {
     const nonceOf = async () =>
       (await proxy(new NextRequest("http://localhost:3000/"))).headers.get("content-security-policy")!.match(/'nonce-([^']+)'/)![1];
     expect(await nonceOf()).not.toBe(await nonceOf());
+  });
+});
+
+describe("request correlation ids", () => {
+  it("are returned on every proxied response, fresh when none was sent", async () => {
+    const a = (await proxy(new NextRequest("http://localhost:3000/"))).headers.get("x-request-id");
+    const b = (await proxy(new NextRequest("http://localhost:3000/"))).headers.get("x-request-id");
+    expect(a).toMatch(/^[A-Za-z0-9:_-]{8,128}$/);
+    expect(a).not.toBe(b);
+  });
+
+  it("keep a well-formed incoming id, and replace one that could inject into a log line", async () => {
+    const kept = await proxy(new NextRequest("http://localhost:3000/", { headers: { "x-request-id": "iad1::abc123-def456" } }));
+    expect(kept.headers.get("x-request-id")).toBe("iad1::abc123-def456");
+    const hostile = await proxy(new NextRequest("http://localhost:3000/", { headers: { "x-request-id": "x-{severity:info}" } }));
+    expect(hostile.headers.get("x-request-id")).not.toContain("severity");
+  });
+
+  it("are set on the signed-out redirect too", async () => {
+    expect((await proxy(new NextRequest("http://localhost:3000/app/x/dashboard"))).headers.get("x-request-id")).toBeTruthy();
   });
 });

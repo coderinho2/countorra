@@ -11,11 +11,15 @@ import { fromMajorUnits } from "@/domain/money/money";
 import type { CurrencyCode } from "@/domain/money/currency";
 import { z } from "zod";
 import { enforceRateLimit } from "@/server/security/rate-limit";
+import { MANUAL_ACCOUNT_KINDS, MANUAL_ACCOUNT_REFUSAL } from "@/domain/accounts/manual-entry";
 
 const createAccountSchema = z.object({
   organizationId: z.uuid(),
   name: z.string().min(1).max(200),
-  kind: z.enum(["cash", "bank", "credit_card", "wallet", "other"]),
+  // Plaid-first (src/domain/accounts/manual-entry.ts): only cash and wallet
+  // accounts are added by hand. Bank and credit card accounts come from a
+  // bank connection; the database refuses them from a browser session too.
+  kind: z.enum(MANUAL_ACCOUNT_KINDS, { error: MANUAL_ACCOUNT_REFUSAL }),
   currency: currencySchema,
   openingBalance: z.string().regex(/^-?\d+(\.\d{1,2})?$/).optional(),
 });

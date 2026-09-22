@@ -8,6 +8,8 @@ import { createToolRegistry } from "@/domain/ai/tools/registry";
 import { isToolInLaunchScope } from "@/domain/ai/tools/launch-scope";
 import { DEFERRED_MODULE_MESSAGE } from "@/domain/organizations/launch-scope";
 import { assertAuthorized, UnauthorizedAiActionError } from "@/domain/ai/safety";
+import { measureDependency, reportError, reportEvent } from "@/lib/observability";
+import { currentRequestId } from "@/server/observability/request-id";
 import { ProviderError } from "@/domain/ai/provider-errors";
 import { parseToolInput } from "@/domain/ai/tools/types";
 import { can } from "@/domain/organizations/permissions";
@@ -244,14 +246,20 @@ export async function sendAiMessage(input: SendAiMessageInput): Promise<SendAiMe
   }
 
   const aiService = createAiService(client);
+  const requestId = await currentRequestId();
+  const observed = { scope: "ai" as const, organizationId: parsed.data.organizationId, userId: user.id, requestId };
 
   try {
-    const result = await aiService.respond({
-      message: parsed.data.message,
-      system: buildSystemPrompt(organization),
-      context: { organizationId: parsed.data.organizationId, userId: user.id },
-      history,
-    });
+    // Timed and recorded — latency, outcome, and the request it belongs to.
+    // The prompt and the reply never reach a log (src/lib/observability.ts).
+    const result = await measureDependency("anthropic", "respond", observed, () =>
+      aiService.respond({
+        message: parsed.data.message,
+        system: buildSystemPrompt(organization),
+        context: { organizationId: parsed.data.organizationId, userId: user.id },
+        history,
+      }),
+    );
 
     await addMessage(client, {
       conversationId,
@@ -280,10 +288,10 @@ export async function sendAiMessage(input: SendAiMessageInput): Promise<SendAiMe
       if (exceedsStructuralBound(result.usage)) {
         // Not a customer problem — the code is supposed to make at most two
         // provider calls per message. More than that means a loop crept in.
-        console.error(`[ai] provider call bound exceeded: ${result.usage.providerCalls} calls in one request`);
+        reportEvent("ai.provider_call_bound_exceeded", { ...observed, detail: { providerCalls: result.usage.providerCalls } }, "error");
       }
     } catch (usageError) {
-      console.error("[ai] failed to record provider usage:", usageError instanceof Error ? usageError.message : usageError);
+      reportError(usageError, { ...observed, detail: { step: "record_ai_usage" } });
     }
 
     const pendingActions: PendingActionSummary[] = [];
@@ -314,7 +322,9 @@ export async function sendAiMessage(input: SendAiMessageInput): Promise<SendAiMe
     // real error is logged; the user gets a sentence they can act on, and the
     // same sentence is what gets persisted into the conversation, since that
     // transcript is read back later by both the user and the model.
-    console.error("[ai] sendAiMessage failed:", error instanceof Error ? `${error.name}: ${error.message}` : error);
+    // Through the redacting seam, never raw: a database or SDK message can
+    // carry connection details (src/lib/observability.ts).
+    reportError(error, { ...observed, detail: { step: "send_ai_message", providerError: error instanceof ProviderError } });
 
     // A `ProviderError` has already been classified and phrased for a person
     // at the provider boundary (429, 5xx, timeout, malformed reply), so its

@@ -14,7 +14,7 @@ import {
 } from "@/validation/schemas/auth";
 import { clientAddress, enforceRateLimit, normalizeIdentifier } from "@/server/security/rate-limit";
 import { getRecoverySession } from "@/server/auth/recovery";
-import { reportEvent } from "@/lib/observability";
+import { reportError, reportEvent } from "@/lib/observability";
 
 export interface AuthActionResult {
   error?: string;
@@ -108,7 +108,9 @@ export async function signUp(_prev: AuthActionResult, formData: FormData): Promi
     // uniform response and `signIn`'s generic error already work to avoid.
     // Rate limiting alone does not close it; one request is enough to learn
     // whether an address has an account.
-    console.error("[auth] signUp failed:", error.message);
+    // Redacted and scrubbed (src/lib/observability.ts): an auth error can name
+    // the address it was about.
+    reportError(error, { scope: "auth", detail: { step: "sign_up", status: error.status ?? null } });
     return { error: "We couldn't create an account with those details. Please check them and try again." };
   }
 

@@ -8,6 +8,8 @@ import { listMerchants } from "@/server/db/repositories/merchants";
 import { TransactionFilters } from "@/components/transactions/transaction-filters";
 import { TransactionsTable } from "@/components/transactions/transactions-table";
 import { NewTransactionDialog } from "@/components/transactions/new-transaction-dialog";
+import { listBankFedAccounts } from "@/server/db/repositories/bank-connections";
+import { acceptsManualEntry } from "@/domain/accounts/manual-entry";
 import { PageHeader, PageMeta, PageMetaItem, PageShell } from "@/components/ui/page-header";
 import { Amount } from "@/components/amount";
 import { subtract } from "@/domain/money/money";
@@ -85,6 +87,8 @@ export default async function TransactionsPage({
   const exclusionNote = describeExclusions(summary.excluded, currency);
 
   const filtered = Boolean(search.kind || search.categoryId || search.reviewed || search.search);
+  const connected = new Set((await listBankFedAccounts(client, orgId)).keys());
+  const manualAccounts = accounts.filter((account) => !account.isArchived && acceptsManualEntry(account, connected));
   const unreviewed = summary.unreviewedCount;
 
   return (
@@ -93,7 +97,14 @@ export default async function TransactionsPage({
         eyebrow="Records"
         title="Transactions"
         description={exclusionNote ? `Every movement of money in and out of this workspace, newest first. ${exclusionNote}` : "Every movement of money in and out of this workspace, newest first."}
-        actions={<NewTransactionDialog organizationId={orgId} accounts={accounts} categories={categories} currency={organization.baseCurrency} />}
+        actions={
+          // Plaid-first: bank and credit card transactions come from the bank
+          // connection. Hand entry is offered only for cash and wallet
+          // accounts no connection feeds — and not at all if there are none.
+          manualAccounts.length > 0 ? (
+            <NewTransactionDialog organizationId={orgId} accounts={manualAccounts} categories={categories} currency={organization.baseCurrency} />
+          ) : undefined
+        }
         meta={
           <PageMeta>
             <PageMetaItem label={filtered ? "Matching" : "Total"} value={result.total.toLocaleString("en-US")} />

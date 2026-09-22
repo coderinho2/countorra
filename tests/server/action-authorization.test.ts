@@ -94,6 +94,7 @@ vi.mock("@/server/db/repositories/transactions", () => ({
   getTransaction: async () => null,
 }));
 vi.mock("@/server/db/repositories/merchants", () => ({ findOrCreateMerchant: async () => ({ id: "m" }), listMerchants: async () => [] }));
+vi.mock("@/server/db/repositories/bank-connections", () => ({ listBankFedAccounts: async () => new Map() }));
 vi.mock("@/server/db/repositories/accounts", () => ({
   createAccount: write("createAccount"),
   archiveAccount: write("archiveAccount"),

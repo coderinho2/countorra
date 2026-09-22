@@ -2612,6 +2612,21 @@ export type Database = {
        * scopes a direct select; `p_organization_id` narrows the scan, it does
        * not grant access.
        */
+      /** 0053: whether a person may enter transactions by hand into this account. */
+      account_accepts_manual_entry: {
+        Args: { p_account_id: string };
+        Returns: boolean;
+      };
+      /** 0053: internal operational counts since a point in time. Service role only. */
+      operations_summary: {
+        Args: { p_since: string };
+        Returns: Json;
+      };
+      /** 0053: the latest migration that (re)defined it. Service role only. */
+      operations_schema_version: {
+        Args: Record<string, never>;
+        Returns: string;
+      };
       account_balances_minor: {
         Args: { p_organization_id: string };
         Returns: { account_id: string; currency: string; balance_minor: number }[];

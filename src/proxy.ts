@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { publicEnv } from "@/lib/env";
-import { reportEvent } from "@/lib/observability";
+import { reportEvent, requestIdFrom } from "@/lib/observability";
 import { buildContentSecurityPolicy, generateNonce } from "@/lib/security/content-security-policy";
 import { checkRequestOrigin } from "@/lib/security/request-origin";
 import { sessionCookieOptions } from "@/lib/security/session-cookies";
@@ -46,6 +46,11 @@ export async function proxy(request: NextRequest) {
   // Forwarded to the render: Next.js reads the nonce out of this header and
   // applies it to every script it emits.
   request.headers.set("content-security-policy", contentSecurityPolicy);
+  // One correlation id per request, forwarded to the render and the server
+  // actions (read back with `requestIdFrom`) and returned to the caller, so a
+  // support report can quote it and a log search can find every line of it.
+  const requestId = requestIdFrom(request.headers);
+  request.headers.set("x-request-id", requestId);
 
   let response = NextResponse.next({ request });
 
@@ -77,10 +82,15 @@ export async function proxy(request: NextRequest) {
   if (!user && request.nextUrl.pathname.startsWith("/app")) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirectTo", request.nextUrl.pathname);
-    return withContentSecurityPolicy(NextResponse.redirect(loginUrl), contentSecurityPolicy);
+    return withRequestId(withContentSecurityPolicy(NextResponse.redirect(loginUrl), contentSecurityPolicy), requestId);
   }
 
-  return withContentSecurityPolicy(response, contentSecurityPolicy);
+  return withRequestId(withContentSecurityPolicy(response, contentSecurityPolicy), requestId);
+}
+
+function withRequestId(response: NextResponse, requestId: string): NextResponse {
+  response.headers.set("x-request-id", requestId);
+  return response;
 }
 
 function withContentSecurityPolicy(response: NextResponse, policy: string): NextResponse {
@@ -109,12 +119,17 @@ export const config = {
      * any non-2xx. Its own authentication is strictly stronger than this
      * layer's: see src/app/api/stripe/webhook/route.ts.
      *
+     * `api/health` and `api/operations` are skipped so a health check never
+     * depends on — or spends — a Supabase auth round trip: liveness must
+     * answer even when auth is down. They carry no session; the detailed
+     * views authenticate with OPERATIONS_TOKEN themselves.
+     *
      * `api/bank-connections/webhooks` is skipped for the same reason: a bank
      * provider's webhook has no session and is verified by its own signature
      * (src/server/bank-connections/webhooks.ts). Both are also listed as
      * cross-site endpoints in request-origin.ts, so the origin check would
      * pass them even if this exclusion were ever removed.
      */
-    "/((?!_next/static|_next/image|favicon.ico|api/stripe|api/bank-connections/webhooks|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/stripe|api/bank-connections/webhooks|api/health|api/operations|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)",
   ],
 };
