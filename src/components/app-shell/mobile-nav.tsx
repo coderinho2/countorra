@@ -79,7 +79,7 @@ export function MobileNav({ orgId, entityType, orgName }: { orgId: string; entit
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
           className={cn(
-            "bg-ink/40 fixed inset-0 z-50 lg:hidden",
+            "motion-fade bg-ink/40 fixed inset-0 z-50 lg:hidden",
             "transition-opacity duration-[var(--duration-modal)] ease-out",
             "data-[state=open]:opacity-100",
             "data-[state=closed]:opacity-0 data-[state=closed]:duration-[var(--duration-exit)]",
@@ -88,7 +88,7 @@ export function MobileNav({ orgId, entityType, orgName }: { orgId: string; entit
         <DialogPrimitive.Content
           aria-label="Navigation"
           className={cn(
-            "border-border-subtle bg-surface fixed top-0 left-0 z-50 flex h-full w-72 flex-col border-r lg:hidden",
+            "motion-drawer border-border-subtle bg-surface fixed top-0 left-0 z-50 flex h-full w-72 flex-col border-r lg:hidden",
             "transition-transform duration-[var(--duration-modal)] ease-[var(--ease-emphasized)]",
             "data-[state=open]:translate-x-0",
             "data-[state=closed]:-translate-x-full data-[state=closed]:duration-[var(--duration-exit)] data-[state=closed]:ease-[var(--ease-exit)]",

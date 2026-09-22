@@ -14,12 +14,12 @@ export const DialogTrigger = DialogPrimitive.Trigger;
 export function DialogContent({ className, children, ...props }: DialogPrimitive.DialogContentProps) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-ink/40 transition-opacity duration-200 ease-out data-[state=closed]:opacity-0 data-[state=open]:opacity-100" />
+      <DialogPrimitive.Overlay className="motion-fade fixed inset-0 z-50 bg-ink/40 transition-opacity duration-200 ease-out data-[state=closed]:opacity-0 data-[state=open]:opacity-100" />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border-subtle bg-surface p-6 shadow-[var(--shadow-level-3)]",
+          "motion-pop fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border-subtle bg-surface p-6 shadow-[var(--shadow-level-3)]",
           "transition-[opacity,transform] duration-[220ms] ease-[var(--ease-emphasized)]",
-          "data-[state=closed]:scale-95 data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=open]:opacity-100",
+          "data-[state=closed]:scale-[0.98] data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=open]:opacity-100",
           className,
         )}
         {...props}

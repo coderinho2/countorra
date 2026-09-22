@@ -298,7 +298,7 @@ export function HeroPreview() {
             </div>
 
             <div className="mt-4 flex items-start gap-2.5 rounded-md border border-border-subtle bg-surface-sunken p-3">
-              <Sparkle size={14} weight="fill" className="mt-0.5 shrink-0 text-accent" />
+              <Sparkle size={14} weight="fill" className="mt-0.5 shrink-0 text-ai" />
               <div>
                 <p className="text-[13px] text-text-primary">{view.insight.text}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-text-tertiary">

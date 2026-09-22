@@ -89,7 +89,7 @@ export function AskAnything() {
             className={cn(
               "shrink-0 rounded-md border px-3 py-2.5 text-left text-[13px] transition-colors duration-100 ease-out lg:shrink",
               active === i
-                ? "border-accent bg-accent-subtle text-accent"
+                ? "border-ai/40 bg-ai-subtle text-ai"
                 : "border-border-subtle text-text-secondary hover:border-border hover:text-text-primary",
             )}
           >
@@ -111,7 +111,7 @@ function AnswerTurn({ example }: { example: Example }) {
     <div className="flex flex-col gap-3 py-4">
       <div className="flex items-center gap-2">
         <span className="flex size-6 items-center justify-center rounded-sm bg-ink text-[11px] font-semibold text-paper">A</span>
-        <span className="text-[11px] font-semibold tracking-wide text-text-tertiary uppercase">Countorra</span>
+        <span className="text-[11px] font-semibold tracking-wide text-ai uppercase">Countorra</span>
       </div>
 
       {example.metrics && (

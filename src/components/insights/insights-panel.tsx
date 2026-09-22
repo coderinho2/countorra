@@ -47,7 +47,7 @@ type Severity = "urgent" | "attention" | "info";
 const SEVERITY = {
   urgent: { Icon: Warning, tone: "text-negative", rail: "border-l-negative", label: "Needs action" },
   attention: { Icon: TrendUp, tone: "text-warning", rail: "border-l-warning", label: "Worth a look" },
-  info: { Icon: Sparkle, tone: "text-accent", rail: "border-l-accent", label: "Observation" },
+  info: { Icon: Sparkle, tone: "text-ai", rail: "border-l-ai", label: "Observation" },
 } as const;
 
 /**

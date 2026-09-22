@@ -23,7 +23,7 @@ export function ProactiveBriefing() {
           key={item.title}
           className={cn("flex items-start gap-3 rounded-md border border-border-subtle bg-surface p-4", i === 0 && "sm:col-span-2")}
         >
-          <Sparkle size={16} weight="fill" className="mt-0.5 shrink-0 text-accent" />
+          <Sparkle size={16} weight="fill" className="mt-0.5 shrink-0 text-ai" />
           <div className="flex flex-col gap-0.5">
             <p className="text-[15px] font-medium text-text-primary">{item.title}</p>
             <p className="text-[13px] text-text-secondary">{item.body}</p>

@@ -37,6 +37,13 @@
   --color-gold: #b88932;
   --color-gold-hover: #9f7428;
 
+  /* AI accent — amber. A secondary signal for the assistant and for what it
+     produced (insights, suggestions, thinking), never a brand or action
+     colour; that remains gold. #d98e4a on paper is ~2.4:1, so light mode
+     uses a deeper amber that holds 4.6:1 as text. */
+  --color-ai: #a35a22;
+  --color-ai-subtle: #f5e6d8;
+
   /* Semantic — financial meaning, independent of accent hue. Deepened from
      the dark-mode values so each reads at AA on paper. */
   --color-positive: #3b7550;
@@ -118,6 +125,8 @@
     --color-accent-contrast: #0c0c0b;
     --color-gold: #d6a84f;
     --color-gold-hover: #e4bb67;
+    --color-ai: #d98e4a;
+    --color-ai-subtle: rgba(217, 142, 74, 0.12);
 
     --color-positive: #6faf82;
     --color-positive-subtle: rgba(111, 175, 130, 0.14);
@@ -158,6 +167,8 @@
   --color-accent-contrast: #0c0c0b;
   --color-gold: #d6a84f;
   --color-gold-hover: #e4bb67;
+  --color-ai: #d98e4a;
+  --color-ai-subtle: rgba(217, 142, 74, 0.12);
 
   --color-positive: #6faf82;
   --color-positive-subtle: rgba(111, 175, 130, 0.14);
@@ -197,6 +208,8 @@
   --color-accent-contrast: var(--color-accent-contrast);
   --color-gold: var(--color-gold);
   --color-gold-hover: var(--color-gold-hover);
+  --color-ai: var(--color-ai);
+  --color-ai-subtle: var(--color-ai-subtle);
 
   --color-positive: var(--color-positive);
   --color-positive-subtle: var(--color-positive-subtle);
@@ -325,7 +338,7 @@
   }
 
   /* Page-to-page entrance (DESIGN.md §22 "page content entrance": 240ms
-     ease-out, 8px rise + fade). @starting-style is the native CSS way to
+     ease-out, fade with a 4px rise). @starting-style is the native CSS way to
      animate an element's first paint after mounting — no JS mounted-state
      dance, so it can't trip the "setState in an effect" pattern, and it
      isn't gated behind requestAnimationFrame (which silently never fires
@@ -345,7 +358,7 @@
 
     @starting-style {
       opacity: 0;
-      transform: translateY(8px);
+      transform: translateY(4px);
     }
   }
 
@@ -432,16 +445,23 @@
       transform var(--duration-panel) var(--ease-out);
   }
 
+  /* Radix mounts a popover already in its open state and removes it the
+     moment it closes unless a CSS *animation* (not a transition) is running.
+     So the open state needs @starting-style to have anything to transition
+     from, and the closed state needs a keyframe animation to be seen at all —
+     without both, the menu simply popped in and out. */
   .overlay-enter[data-state="open"] {
     opacity: 1;
     transform: scale(1);
+
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.96);
+    }
   }
 
   .overlay-enter[data-state="closed"] {
-    opacity: 0;
-    transform: scale(0.96);
-    transition-duration: var(--duration-exit);
-    transition-timing-function: var(--ease-exit);
+    animation: overlay-exit var(--duration-exit) var(--ease-exit) forwards;
   }
 
   /* Print (DESIGN.md §13: the printed invoice and the on-screen invoice
@@ -512,5 +532,76 @@
       animation: none;
       opacity: 1;
     }
+  }
+}
+
+/*
+ * Dialog and drawer motion (DESIGN.md §22). Same problem as `.overlay-enter`:
+ * a Radix dialog mounts straight into `data-state="open"` and unmounts as soon
+ * as it closes unless an animation is running, so the `data-[state=*]`
+ * transitions on the command palette, the mobile drawer and the dialogs were
+ * never actually seen. @starting-style gives the entrance a start point; the
+ * keyframes make the exit visible, and Radix waits for them to end.
+ *
+ * Unlayered so they win over the Tailwind utilities that set the resting
+ * state. The `prefers-reduced-motion` rule in `@layer base` is `!important`,
+ * and a layered `!important` outranks an unlayered one, so reduced motion
+ * still collapses all of this to instant.
+ */
+.motion-fade[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+  }
+}
+.motion-fade[data-state="closed"] {
+  animation: motion-fade-out var(--duration-exit) var(--ease-exit) forwards;
+}
+
+/* Content: fade with a barely-there scale. `scale` (not `transform`) so it
+   composes with the centring `translate` Tailwind v4 already sets — and
+   listed in the transition, since the components name only opacity and
+   transform, which would leave the scale to snap. */
+.motion-pop {
+  transition-property: opacity, transform, scale;
+}
+.motion-pop[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+.motion-pop[data-state="closed"] {
+  animation: motion-pop-out var(--duration-exit) var(--ease-exit) forwards;
+}
+
+.motion-drawer[data-state="open"] {
+  @starting-style {
+    translate: -100% 0;
+  }
+}
+.motion-drawer[data-state="closed"] {
+  animation: motion-drawer-out var(--duration-exit) var(--ease-exit) forwards;
+}
+
+@keyframes overlay-exit {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes motion-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes motion-pop-out {
+  to {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+@keyframes motion-drawer-out {
+  to {
+    translate: -100% 0;
   }
 }

@@ -67,16 +67,12 @@ const CAPABILITIES = [
 export function HeroTerminal() {
   return (
     <section className="border-border-subtle bg-paper relative isolate overflow-hidden border-b">
-      {/* Ruled plate. Non-square cells, masked downward. Decorative, so it is
-          hidden from assistive tech and sits behind everything. */}
+      {/* Depth without decoration: the plate settles, top to bottom, from the
+          page colour to a faint trace of the sunken surface — no grid, no
+          lines, no glow behind the headline. */}
       <div
         aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute inset-0 -z-10",
-          "bg-[linear-gradient(to_right,var(--color-border-subtle)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-border-subtle)_1px,transparent_1px)]",
-          "bg-[size:96px_80px]",
-          "[mask-image:linear-gradient(to_bottom,#000_0%,#000_45%,transparent_92%)]",
-        )}
+        className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_bottom,var(--color-paper)_0%,color-mix(in_srgb,var(--color-surface-sunken)_45%,var(--color-paper))_100%)]"
       />
 
       <div className="mx-auto max-w-[1200px] px-6 lg:px-10">

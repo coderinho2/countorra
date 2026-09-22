@@ -145,7 +145,7 @@ export function AiChatPanel({
         {turns.length === 0 ? (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 py-10">
             <div className="section-enter flex flex-col gap-3" style={{ "--enter-index": 0 } as React.CSSProperties}>
-              <p className="font-numeric text-text-tertiary text-[11px] tracking-[0.14em] uppercase">Intelligence console</p>
+              <p className="font-numeric text-ai text-[11px] tracking-[0.14em] uppercase">Intelligence console</p>
               <h1 className="text-ink text-[32px] leading-10 font-semibold tracking-[-0.015em] sm:text-[40px] sm:leading-[48px]">Ask your money</h1>
               <p className="text-text-secondary max-w-[60ch] text-[15px]">
                 Every answer is computed from the transactions, accounts and documents in this workspace. Nothing is estimated, and nothing is invented.
@@ -168,7 +168,7 @@ export function AiChatPanel({
                             onClick={() => send(question)}
                             className={cn(
                               "group flex w-full items-center justify-between gap-3 py-2.5 text-left text-[15px] text-text-primary",
-                              "transition-colors duration-[var(--duration-fast)] ease-out hover:text-accent",
+                              "transition-colors duration-[var(--duration-fast)] ease-out hover:text-ai",
                               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
                             )}
                           >
@@ -259,7 +259,7 @@ export function AiChatPanel({
             )}
             {pending && (
               <div className="flex items-center gap-2 py-4">
-                <span aria-hidden="true" className="ai-thinking-dot size-1 rounded-full bg-gold" />
+                <span aria-hidden="true" className="ai-thinking-dot size-1 rounded-full bg-ai" />
                 <span className="text-[13px] text-text-tertiary">Working through your books…</span>
               </div>
             )}

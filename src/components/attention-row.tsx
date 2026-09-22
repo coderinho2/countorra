@@ -27,7 +27,7 @@ export type AttentionSeverity = "urgent" | "insight" | "info";
 
 const SEVERITY = {
   urgent: { Icon: Warning, className: "text-negative" },
-  insight: { Icon: Sparkle, className: "text-accent" },
+  insight: { Icon: Sparkle, className: "text-ai" },
   info: { Icon: Info, className: "text-text-tertiary" },
 } as const;
 

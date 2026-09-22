@@ -32,7 +32,7 @@ export function AiMessageTurn({ role, content, label }: { role: "user" | "assist
         <span aria-hidden="true" className="flex size-6 items-center justify-center rounded-sm bg-ink text-[11px] font-semibold text-paper">
           A
         </span>
-        <span className="text-[11px] font-semibold tracking-[0.02em] text-text-tertiary uppercase">{label}</span>
+        <span className="text-[11px] font-semibold tracking-[0.02em] text-ai uppercase">{label}</span>
       </div>
       <p className="max-w-[70ch] text-[15px] leading-[24px] whitespace-pre-wrap text-text-primary">{content}</p>
     </div>

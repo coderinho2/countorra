@@ -123,6 +123,18 @@ a button fill carrying graphite text (~6.6:1), wrong for gold *text*, which
 needs 4.5:1. `--color-accent` is the deeper `#8A6420` (~4.7:1) for text,
 borders and focus. In dark mode both are the brand `#D6A84F` (~8.9:1).
 
+### AI accent — Amber (secondary)
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| `--color-ai` | `#A35A22` | `#D98E4A` | The assistant's signal: thinking dot, insight Sparkle marks, the assistant's name label, AI-suggestion hover/selected states |
+| `--color-ai-subtle` | `#F5E6D8` | `rgba(217,142,74,0.12)` | Selected AI state background |
+
+Gold is brand and action; amber means "the assistant made or is making
+this". Amber is a mark, never a surface: no amber panels, backgrounds,
+gradients, glows or buttons — the send button stays gold. Roughly nine
+parts graphite/gold to one part amber. Light mode is deepened to keep 4.5:1
+as text (`#D98E4A` on paper is ~2.4:1).
+
 ### Semantic (financial meaning — independent of accent hue)
 | Token | Light | Dark | Role |
 |---|---|---|---|

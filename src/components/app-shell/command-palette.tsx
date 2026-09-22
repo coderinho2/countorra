@@ -114,14 +114,14 @@ export function CommandPalette({ organizationId, entityType }: { organizationId:
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
           className={cn(
-            "bg-ink/40 fixed inset-0 z-50",
+            "motion-fade bg-ink/40 fixed inset-0 z-50",
             "transition-opacity duration-[var(--duration-modal)] ease-out",
             "data-[state=closed]:opacity-0 data-[state=closed]:duration-[var(--duration-exit)] data-[state=open]:opacity-100",
           )}
         />
         <DialogPrimitive.Content
           className={cn(
-            "fixed top-[14vh] left-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2",
+            "motion-pop fixed top-[14vh] left-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2",
             "border-border-subtle bg-surface overflow-hidden rounded-lg border shadow-[var(--shadow-level-3)]",
             "transition-[opacity,transform] duration-[var(--duration-modal)] ease-[var(--ease-emphasized)]",
             "data-[state=open]:scale-100 data-[state=open]:opacity-100",
@@ -143,7 +143,7 @@ export function CommandPalette({ organizationId, entityType }: { organizationId:
                 placeholder="Search transactions, documents..."
                 className="text-text-primary placeholder:text-text-tertiary h-12 w-full bg-transparent text-[15px] outline-none"
               />
-              {isPending && <span aria-hidden="true" className="ai-thinking-dot bg-gold size-1.5 shrink-0 rounded-full" />}
+              {isPending && <span aria-hidden="true" className="ai-thinking-dot bg-ai size-1.5 shrink-0 rounded-full" />}
             </div>
 
             <Command.List className="max-h-[min(24rem,50vh)] overflow-y-auto p-1.5">
@@ -200,7 +200,7 @@ export function CommandPalette({ organizationId, entityType }: { organizationId:
                 close
               </span>
               <span className="ml-auto flex items-center gap-1.5">
-                <ChatCircleText size={12} />
+                <ChatCircleText size={12} className="text-ai" />
                 Ask your money for the rest
               </span>
             </div>
