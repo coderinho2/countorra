@@ -142,9 +142,15 @@ export const PLAN_TIERS: readonly PlanTier[] = ["free", "premium", "business"];
 export type GatedFeature = "documentProcessing" | "advancedTaxTools" | "bankConnections" | "prioritySupport";
 
 export const FEATURE_IMPLEMENTED: Record<GatedFeature, boolean> = {
-  // Digital-PDF text is read (src/server/documents/pdf-text-layer.ts), but no
-  // OCR provider exists for scans and photos, so the plan feature is not claimed.
-  documentProcessing: false,
+  // OCR ships: Amazon Textract reads scans and photos, with AnalyzeExpense
+  // for receipts and AnalyzeID for identity documents
+  // (src/server/documents/textract). Digital PDFs are still read locally by
+  // the text-layer reader, which is exact and free.
+  //
+  // Whether a given DEPLOYMENT can use it is a separate fact — it needs AWS
+  // credentials — and the product reports that separately: an image uploaded
+  // to a deployment with no reader says so rather than failing silently.
+  documentProcessing: true,
   // Tax storage and configuration exist; the calculation engine does not.
   advancedTaxTools: false,
   // Plaid is integrated (Task 12): Link, encrypted credentials, incremental

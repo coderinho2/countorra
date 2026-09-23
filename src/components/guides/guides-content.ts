@@ -18,7 +18,7 @@ import { SUPPORTED_STATES } from "@/domain/tax/supported-states";
  *   bank connections      src/domain/bank-connections, PLAID-INTEGRATION.md
  *   manual entry          src/domain/accounts/manual-entry.ts
  *   assistant + approval  src/domain/ai/tools/registry.ts, /terms §8–9
- *   documents             src/server/documents (PDF text layer, no OCR)
+ *   documents             src/server/documents (text layer + Textract OCR)
  *
  * NO AUTHOR AND NO PUBLICATION DATE. Countorra has no bylined authors, and
  * inventing either would be a fabricated fact on pages whose whole value is
@@ -282,7 +282,7 @@ export const GUIDES: Guide[] = [
         paragraphs: [
           "Countorra organizes your tax information and produces an estimate and a summary you can export. It does not prepare returns, does not e-file, does not submit anything to the IRS or any state, and does not provide a professional review.",
           "The estimate has limits, and it lists them alongside every figure. It always uses the standard deduction, so itemized deductions are not modelled; it does not model tax credits; and it does not account for withholding or estimated payments you have already made. Read that list before you rely on a number.",
-          "Documents you upload are read for their text where they have a text layer, and any values found are shown to you as proposals. Nothing extracted from a document enters your tax information until you confirm it.",
+          "Documents you upload are read for their text — from the text layer of a digital PDF, or by text recognition for a photo or a scan — and any values found are shown to you as proposals. Nothing extracted from a document enters your tax information until you confirm it.",
         ],
       },
     ],

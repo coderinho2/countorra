@@ -41,7 +41,9 @@ const External = ({ href, children }: { href: string; children: React.ReactNode 
  *     price, plan, status and period only (migration 0035)
  *   Resend — Supabase Auth's SMTP transport for account email: confirm
  *     address, reset password, change email, password changed
- *   no OCR provider — PDF text layer only (src/server/documents)
+ *   AWS Textract — OCR for scans and photos; DetectDocumentText,
+ *     AnalyzeExpense, AnalyzeID (src/server/documents/textract)
+ *   identity documents — identifiers never stored (identity.ts + 0055)
  *   browser storage — the theme preference only (next-themes)
  *   no analytics, no error-tracking vendor
  *   account deletion — src/server/account/actions.ts#deleteAccountAction
@@ -90,7 +92,9 @@ export default function PrivacyPage() {
               </li>
               <li>
                 <Strong>Uploaded documents</Strong> — files you upload, stored in private storage isolated to your organization. For PDFs that contain text, that
-                text is read on our servers so you can review the figures it contains. We do not currently send documents to an OCR or document-extraction service.
+                text is read on our servers so you can review the figures it contains. For a photo or a scan, which has no text to read, the file is sent to
+                Amazon Web Services for text recognition — see <a href="#third-parties" className="text-accent hover:underline">&sect;5</a>. You choose what to
+                upload; a document you do not upload is never processed.
               </li>
               <li>
                 <Strong>AI conversations</Strong> — your messages to the AI assistant and its responses, so your conversation history persists.
@@ -164,13 +168,18 @@ export default function PrivacyPage() {
                 <Strong>Stripe</Strong> — only if you subscribe to a paid plan. See §7 and <External href={STRIPE_PRIVACY_POLICY_URL}>Stripe&apos;s privacy policy</External>.
               </li>
               <li>
+                <Strong>Amazon Web Services (Textract)</Strong> — text recognition, and only for a file that needs it: a photo or a scan. The file&apos;s contents
+                are sent to AWS, which returns the text and, for a receipt, the figures it identified. AWS is not given your name, your email address or anything
+                else about your account, and Countorra does not use the result to train anything.
+              </li>
+              <li>
                 <Strong>Resend</Strong> — delivery of account and security emails. When Countorra confirms a new address, resets a password, confirms an email
                 change, or tells you your password was changed, your email address and that message pass through Resend so it can be delivered.
               </li>
             </ul>
             <p>
-              We do not currently use a document-extraction or OCR service (such as Amazon Textract), a social or single sign-on provider, an analytics or
-              advertising platform, or an error-tracking service. If we add one, we will update this policy before it receives your data.
+              We do not currently use a social or single sign-on provider, an analytics or advertising platform, or an error-tracking service. If we add one, we
+              will update this policy before it receives your data.
             </p>
           </Section>
 
@@ -203,6 +212,37 @@ export default function PrivacyPage() {
               stored access key. Transactions already imported stay in your books until you delete them, and the record of the connection and the transactions
               it reported stays with your organization&apos;s history until the organization is deleted. Plaid&apos;s own policy explains what Plaid keeps and how to
               manage it.
+            </p>
+          </Section>
+
+          <Section id="identity-documents" title="6b. Identity documents">
+            <p>
+              You can upload an identity document — a driver&apos;s licence, a passport, a Social Security document or another government ID — the same way you
+              upload any other file. Countorra treats it differently from everything else, and the difference is in what it <Strong>does not keep</Strong>.
+            </p>
+            <ul className="list-disc pl-5">
+              <li>
+                <Strong>The number is not stored.</Strong> Where a document number is read, only the last four digits are kept, so you can tell two documents
+                apart. For anything shaped like a Social Security number, <Strong>no digits are kept at all</Strong>.
+              </li>
+              <li>
+                <Strong>Most of the document is discarded.</Strong> Name, date of birth, address and the machine-readable strip are read in order to find the
+                document&apos;s type and dates, and are then thrown away rather than saved. What remains is the document class, the issuing state and the issue
+                and expiry dates.
+              </li>
+              <li>
+                <Strong>It is never used to change your records.</Strong> Nothing on an identity document can become a transaction or a tax figure, and its
+                contents are not shared with the AI assistant.
+              </li>
+              <li>
+                <Strong>Deleting the document deletes what was read from it</Strong>, along with the file itself. See <a href="#retention" className="text-accent hover:underline">&sect;9</a>.
+              </li>
+            </ul>
+            <p>
+              The file itself is stored privately, exactly like any other document, and is only reachable through a short-lived link issued to you.
+            </p>
+            <p>
+              <LegalFact name="identityDocumentTreatment" />
             </p>
           </Section>
 

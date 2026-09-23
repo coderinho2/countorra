@@ -8,6 +8,7 @@ import { format, money } from "@/domain/money/money";
 import { isSupportedCurrency } from "@/domain/money/currency";
 import { willPropose, type ProposalRelation } from "@/domain/documents/intelligence/proposals";
 import {
+  isIdentityDocument,
   DOCUMENT_TYPE_LABELS,
   EXTRACTION_WARNING_TEXT,
   PROCESSING_VERSION,
@@ -52,6 +53,7 @@ const SECTION_ORDER: readonly { section: FieldSection; title: string }[] = [
   { section: "PERIOD", title: "Dates" },
   { section: "BALANCES", title: "Balances" },
   { section: "TOTALS", title: "Totals" },
+  { section: "IDENTITY", title: "Identity document" },
 ];
 
 const ROW_SECTIONS: readonly FieldSection[] = ["TRANSACTIONS", "LINE_ITEMS"];
@@ -210,6 +212,24 @@ export default async function DocumentIntelligencePage({ params }: { params: Pro
               <Figure label="Tax year" value={extraction.taxYear === null ? "Not printed" : String(extraction.taxYear)} note={extraction.taxYear === null ? "None is assumed." : "As printed on the document."} />
               <Figure label="Read by" value={extraction.method === "PDF_TEXT_LAYER" ? "PDF text layer" : "OCR"} note={`${extraction.provider} ${extraction.providerVersion} · ${extraction.pageCount} ${extraction.pageCount === 1 ? "page" : "pages"}`} />
             </div>
+
+            {isIdentityDocument(extraction.documentType) ? (
+              /* Identity documents carry a different promise from every other
+                 kind, and the promise is only worth anything if the person
+                 can see it. Each sentence is a property enforced elsewhere:
+                 storage (identity.ts + migration 0055), the assistant
+                 (explain.ts), and the proposal path (no schema mapping). */
+              <div className="flex items-start gap-3 border-b border-border-subtle bg-surface-sunken px-4 py-3">
+                <Info size={16} className="mt-0.5 shrink-0 text-text-tertiary" aria-hidden="true" />
+                <div className="flex flex-col gap-1 text-[13px] leading-[1.6] text-text-secondary">
+                  <p className="font-medium text-text-primary">This is an identity document, and it is treated differently.</p>
+                  <p>
+                    The number on it was never stored — only the last four digits, so you can tell two documents apart. Its details are not shared with the
+                    assistant, and nothing on it can be used to change a figure or a transaction. Deleting the document removes everything read from it.
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             {regular.length === 0 ? (
               <EmptyState title="No fields" description="No figures are extracted from this kind of document." />

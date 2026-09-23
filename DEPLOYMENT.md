@@ -174,6 +174,29 @@ Preview and Production means a preview can decrypt production bank tokens.
 | `EMAIL_REPLY_TO` | a monitored inbox | optional | optional | no |
 | `RESEND_API_KEY` | ✓ | ✓ | unset | **yes** |
 
+### Document OCR — Amazon Textract (optional; region enables it)
+
+| Variable | P | Pv | L | Secret |
+| --- | --- | --- | --- | --- |
+| `AWS_REGION` | e.g. `us-east-1` | ✓ | optional | no |
+| `AWS_ACCESS_KEY_ID` | ✓ (see below) | ✓ | optional | **yes** |
+| `AWS_SECRET_ACCESS_KEY` | ✓ (see below) | ✓ | optional | **yes** |
+
+Unset `AWS_REGION` and there is no OCR: photos and scans are stored and the
+product says plainly that no reader is configured. Nothing else breaks, and
+digital PDFs are still read locally by the text-layer reader.
+
+**Prefer a role over a key.** If the platform can supply credentials itself —
+an instance or task role, or OIDC web identity — set only `AWS_REGION` and
+leave the key pair unset. The SDK's default provider chain is used, and no
+long-lived secret exists to leak or rotate. Vercel provides no such role
+today, which is the only reason the key pair is supported.
+
+Setting one half of the pair without the other is refused at startup rather
+than failing later on somebody's upload.
+
+See §13 for the IAM policy.
+
 ### Never set in any deployed environment
 
 `DATABASE_URL` (local RLS scripts only).
@@ -582,6 +605,110 @@ must equal `operations_schema_version()` in the latest migration; readiness is
 
 ---
 
+## 10b. Amazon Textract (document OCR)
+
+### What it is used for
+
+| Operation | When | Why that one |
+| --- | --- | --- |
+| `DetectDocumentText` | every photo or scan, first | cheapest; produces the text that classifies the document |
+| `AnalyzeExpense` | receipts, invoices, bills | returns merchant, dates, subtotal/tax/total and line items already identified |
+| `AnalyzeID` | US driver's licences and US passports | the only identity documents AWS supports |
+
+`AnalyzeID` is **not** used for Social Security documents or other government
+IDs. AWS does not support them, so they are classified, held privately and
+read by no structured operation.
+
+### The IAM policy — three actions, nothing else
+
+The document bytes are sent in the request body, never through S3. So this
+integration needs no bucket, no `s3:GetObject`, and no KMS key:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "textract:DetectDocumentText",
+        "textract:AnalyzeExpense",
+        "textract:AnalyzeID"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+`Resource` is `*` because Textract's synchronous operations act on the bytes
+in the request and have no resource ARN to scope to. Narrow it instead with a
+dedicated IAM user or role used by nothing else, and — if you want a hard
+ceiling — an AWS Budgets alarm on the Textract service.
+
+### Hard limits that come from AWS, not from Countorra
+
+* **10 MB** per document for synchronous operations. Countorra's own upload
+  ceiling is 20 MB, so a file can be stored and still be too large to read.
+  It is reported as such rather than failed.
+* **One page** of a PDF. Multi-page scans would need the asynchronous API,
+  which requires an S3 bucket this deployment does not have. Digital
+  multi-page PDFs are unaffected — the local text-layer reader handles up to
+  30 pages.
+* **JPEG, PNG, PDF, TIFF.** WEBP is accepted for upload but cannot be read.
+
+### Cost control
+
+Each document costs at most two calls: the text pass, and one purpose-built
+pass when the class earns it. The second is skipped entirely for a document
+that could not be classified. A document is never re-read under the same
+processing version, and attempts are bounded by
+`document_processing_jobs.max_attempts`.
+
+### Turning it on — the whole checklist
+
+Nothing below has been done yet. Until step 4 passes, the Textract
+integration is implemented and test-verified but **not live-verified**.
+
+**1. AWS IAM.** Create a role (preferred) or a user used by nothing else, with
+exactly the policy above. Note the region you will use — Textract is regional,
+and the region must be one where it is available.
+
+**2. Vercel environment variables** (Production and Preview, Sensitive):
+
+* `AWS_REGION` — always
+* `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` — only if you created a user
+  rather than a role. Both or neither; one alone is refused at startup.
+
+Redeploy after setting them. Until `AWS_REGION` is set, photos and scans are
+stored and honestly reported as unreadable — nothing breaks.
+
+**3. Supabase migration.** Push `0055` and `0056` **before** the deploy that
+uses them (§11). Confirm with the operations token that
+`/api/health/ready` reports `schema.ok: true` and `schema.actual: "0056"`.
+
+**4. Live smoke test** — the command under "Verifying it live" below. It makes
+real, billed calls. It is the only thing that proves the credentials
+authenticate, the region is right and the IAM policy actually permits the three
+actions; a passing unit suite proves none of that.
+
+**5. Rollback.** Unset `AWS_REGION` and redeploy. OCR switches off cleanly:
+digital PDFs still read locally, images report no reader, and no job, extraction
+or stored figure is affected. The migrations are additive and do not need
+reverting to turn the feature off — revert them only if you are rolling the
+whole release back, using the statements at the head of each migration file.
+
+### Verifying it live
+
+```
+TEXTRACT_LIVE=1 npx vitest run tests/textract-live
+```
+
+Off by default; it makes real, billed calls. Everything else in the OCR suite
+mocks the SDK and needs no credentials.
+
+---
+
 ## 11. Database migrations
 
 Migrations live in `supabase/migrations`, applied in filename order, and are
@@ -612,6 +739,16 @@ Rules:
   `bank_anchor_account_balances`, which do not exist before 0054 — every sync
   would fail. The previous build runs unchanged against 0054. Readiness
   reports `schema.ok: false` until both are in place.
+* **0055 (document OCR and identity documents)** is the usual direction: push
+  **first**, then deploy. It widens two CHECK constraints so the new document
+  classes and the `IDENTITY` field section can be written; the previous build
+  writes nothing 0055 forbids, so pushing ahead of the deploy is safe and
+  leaves no window where a read fails. It also adds two constraints that
+  refuse to store an identifier from an identity document, which hold even
+  against the service role.
+* **0056 (document failure categories)** is additive — it widens one CHECK so
+  a failed read can record why. Push it with 0055, before the deploy. Existing
+  rows keep `PROVIDER_ERROR`, which is still a valid category.
 * For Preview's separate project, push the same migrations there.
 
 ---

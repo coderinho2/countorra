@@ -26,8 +26,12 @@ test("privacy states the real processors and how bank and card data are handled"
   expect(text).not.toMatch(/do not currently use[^.]*a payment processor/i);
   expect(text).not.toMatch(/does not connect to your bank/i);
   expect(text).not.toMatch(/Self-serve account deletion is not yet built/i);
-  // Textract appears only as something NOT used.
-  expect(text).toMatch(/do not currently use a document-extraction or OCR service \(such as Amazon Textract\)/);
+  // OCR now ships, so the policy must name the processor rather than deny it.
+  expect(body).toContainText("Amazon Web Services");
+  expect(text).not.toMatch(/do not currently use a document-extraction or OCR service/);
+  // ...and state what is NOT kept from an identity document.
+  await expect(page.locator("#identity-documents")).toContainText("no digits are kept at all");
+  await expect(page.locator("#identity-documents")).toContainText("never used to change your records");
 });
 
 test("terms state the plans, recurring billing, Plaid, and the limits of the tax figures", async ({ page }) => {

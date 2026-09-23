@@ -12,10 +12,11 @@
  * XSS vector, so the immediate risk today is modest. It matters for two other
  * reasons:
  *
- *   - A document store is an input to a future OCR/extraction pipeline. That
- *     pipeline will hand these bytes to a parser, and parsers are where
- *     malformed-file vulnerabilities live. Establishing "the bytes are what
- *     they say" before that exists is much easier than retrofitting it after.
+ *   - A document store is the input to the OCR/extraction pipeline, which
+ *     now hands these bytes to a parser and to Amazon Textract. Parsers are
+ *     where malformed-file vulnerabilities live, and a reader that is told a
+ *     file is a PDF will treat it as one. This is the check that makes that
+ *     claim true before either sees the bytes.
  *   - A signed download URL serves the stored `content-type`. A file stored as
  *     `application/pdf` whose bytes are HTML is a file the browser may
  *     eventually be persuaded to render.
@@ -28,6 +29,23 @@
  */
 
 export type VerifiedMimeType = "application/pdf" | "image/png" | "image/jpeg" | "image/webp";
+
+/**
+ * The stored formats an OCR reader can actually read.
+ *
+ * Amazon Textract accepts JPEG, PNG, PDF and TIFF — and NOT WEBP. The product
+ * accepts WEBP uploads because storing one is perfectly reasonable, so the
+ * two lists differ on purpose and this is the honest half: a WEBP document is
+ * kept, and the product says it cannot be read rather than failing at AWS
+ * with an error nobody can act on.
+ *
+ * The upload dialog reads this so its wording cannot drift from the truth.
+ */
+export const OCR_READABLE_MIME_TYPES: readonly VerifiedMimeType[] = ["application/pdf", "image/png", "image/jpeg"];
+
+export function isOcrReadable(mimeType: string): boolean {
+  return (OCR_READABLE_MIME_TYPES as readonly string[]).includes(mimeType);
+}
 
 interface Signature {
   mimeType: VerifiedMimeType;

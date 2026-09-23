@@ -8,6 +8,9 @@ import { requireOrgMembership } from "@/server/auth/session";
 import { can } from "@/domain/organizations/permissions";
 import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { enforceRateLimit } from "@/server/security/rate-limit";
+import { entitlementsFor } from "@/domain/billing/entitlements";
+import { getSubscription } from "@/server/db/repositories/subscriptions";
+import { textractConfigured } from "./textract/client";
 import { reportError } from "@/lib/observability";
 import { isSupportedCurrency } from "@/domain/money/currency";
 import { planFactProposals, willPropose } from "@/domain/documents/intelligence/proposals";
@@ -47,6 +50,37 @@ function field(formData: FormData, name: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * Two separate facts, checked in this order and never conflated — the same
+ * shape as `bankAccess` in src/server/bank-connections/actions.ts.
+ *
+ * Whether a READER EXISTS on this deployment is not a question about the
+ * customer's plan, and no purchase changes it. Only once one does is the plan
+ * asked, from the canonical entitlement model (a lapsed subscription is Free
+ * there, so it is Free here).
+ *
+ * WHY THIS IS ENFORCED HERE AND NOT ONLY ON THE PAGE. The button that runs a
+ * read is rendered by a page that already knows the plan, so a Free workspace
+ * does not see it. That is presentation. This is the check that matters: a
+ * Server Action is a public endpoint, and anyone can post to it with a
+ * document id. Without this, a Free workspace could run billed OCR by
+ * replaying the form — the pricing page advertises document reading as part
+ * of Premium and Business, and an advertised gate that is not enforced is
+ * just an expensive suggestion.
+ */
+async function readerAccess(client: Awaited<ReturnType<typeof createClient>>, organizationId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!textractConfigured()) {
+    // Not a plan problem, so it is not phrased as one. Digital PDFs still
+    // read locally; this only governs scans and photos.
+    return { ok: true };
+  }
+  const entitlements = entitlementsFor(await getSubscription(client, organizationId));
+  if (!entitlements.documentProcessing) {
+    return { ok: false, error: `Reading scans and photos is part of Premium and Business. This workspace is on ${entitlements.name}.` };
+  }
+  return { ok: true };
+}
+
 const STATUS_MESSAGE: Record<string, string> = {
   SUCCEEDED: "Read. Review the figures below — nothing is used until you confirm it.",
   PARTIAL: "Read, but some fields couldn't be found. Review what was read.",
@@ -65,6 +99,12 @@ export async function processDocumentAction(_prev: DocumentIntelligenceActionRes
   if (!limited.allowed) return { error: limited.message };
 
   const client = await createClient();
+
+  // After the rate limit, before any provider call: an unentitled request
+  // must cost nothing at AWS.
+  const access = await readerAccess(client, parsed.data.organizationId);
+  if (!access.ok) return { error: access.error };
+
   try {
     const outcome = await processDocument(
       { client, admin: createAdminClient(), providers: configuredProviders(), now: () => new Date(), download: downloadDocumentBytes },
@@ -101,6 +141,10 @@ export async function processDocumentAction(_prev: DocumentIntelligenceActionRes
         return { error: "This document is already being read. Refresh in a moment." };
       case "failed":
         return { error: `${outcome.message}${outcome.canRetry ? " You can try again." : ""}` };
+      case "permanently_failed":
+        // Deliberately no "try again": the same file read the same way gives
+        // the same answer, and the message already says what to change.
+        return { error: outcome.message };
       default:
         return { error: outcome.message };
     }

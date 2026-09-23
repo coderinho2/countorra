@@ -474,7 +474,23 @@ export type DocumentProcessingJobRow = {
   processing_version: string;
   provider: string;
   provider_version: string;
-  failure_category: "DOCUMENT_UNAVAILABLE" | "FILE_VALIDATION_FAILED" | "PROVIDER_ERROR" | "PROVIDER_TIMEOUT" | "MALFORMED_PROVIDER_RESPONSE" | "LEASE_EXPIRED" | "INTERNAL_ERROR" | null;
+  /** Mirrors the CHECK in 0046 as widened by 0056. Keep in step with
+   *  FailureCategory in src/domain/documents/intelligence/types.ts. */
+  failure_category:
+    | "DOCUMENT_UNAVAILABLE"
+    | "FILE_VALIDATION_FAILED"
+    | "UNSUPPORTED_DOCUMENT"
+    | "DOCUMENT_TOO_LARGE"
+    | "DOCUMENT_UNREADABLE"
+    | "PROVIDER_AUTH_ERROR"
+    | "PROVIDER_THROTTLED"
+    | "PROVIDER_UNAVAILABLE"
+    | "PROVIDER_ERROR"
+    | "PROVIDER_TIMEOUT"
+    | "MALFORMED_PROVIDER_RESPONSE"
+    | "LEASE_EXPIRED"
+    | "INTERNAL_ERROR"
+    | null;
   failure_message: string | null;
   requested_by: string | null;
   started_at: string | null;

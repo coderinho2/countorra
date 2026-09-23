@@ -144,9 +144,12 @@ describe("gated features", () => {
     // The honesty check. `hasFeature` requires BOTH the entitlement and an
     // implementation, so a paid tier can never be told it has something the
     // product cannot actually do. Each flag flips in the same commit that
-    // ships the feature and its gate — bank connections did so in Task 12.
-    expect(hasFeature("business", "bankConnections")).toBe(true);
-    for (const feature of GATED.filter((candidate) => candidate !== "bankConnections")) {
+    // ships the feature and its gate — bank connections did so in Task 12,
+    // and document processing when Amazon Textract shipped (OCR for scans and
+    // photos, AnalyzeExpense for receipts, AnalyzeID for identity documents).
+    const built = ["bankConnections", "documentProcessing"];
+    for (const feature of built) expect(hasFeature("business", feature as (typeof GATED)[number]), feature).toBe(true);
+    for (const feature of GATED.filter((candidate) => !built.includes(candidate))) {
       expect(hasFeature("business", feature), feature).toBe(false);
     }
   });

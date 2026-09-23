@@ -1,4 +1,4 @@
-import type { Classification, ClassificationConfidence, DocumentType } from "./types";
+import { isIdentityDocument, type Classification, type ClassificationConfidence, type DocumentType } from "./types";
 
 /**
  * DOCUMENT CLASSIFICATION — from content, never from a name.
@@ -191,6 +191,77 @@ const SIGNALS: readonly SignalSet[] = [
       ["thank-you", /\bThank\s+you\b/i],
     ],
   },
+  {
+    type: "BILL",
+    irsForm: false,
+    strong: [
+      ["bill-statement", /\b(Utility|Electric|Gas|Water|Phone|Internet|Cable|Medical)\s+(Bill|Statement)\b/i],
+      ["bill-heading", /\bYour\s+Bill\b|\bBill\s+Summary\b/i],
+    ],
+    supporting: [
+      ["amount-due", /\b(Amount|Balance|Payment)\s+Due\b/i],
+      ["billing-period", /\bBilling\s+(Period|Cycle|Date)\b/i],
+      ["service-address", /\bService\s+Address\b/i],
+      ["previous-balance", /\bPrevious\s+Balance\b/i],
+      ["meter", /\bMeter\s+(Reading|Number)\b/i],
+    ],
+  },
+  {
+    type: "DRIVER_LICENSE",
+    irsForm: false,
+    strong: [
+      ["drivers-license", /\bDRIVER'?.?S?\s+LICEN[SC]E\b/i],
+      ["operator-license", /\bOPERATOR\s+LICEN[SC]E\b/i],
+    ],
+    supporting: [
+      ["dl-number", /\bDLN?\b|\bLICEN[SC]E\s*(Number|No\.?|#)/i],
+      ["class", /\bCLASS\b/i],
+      ["endorsements", /\bENDORSEMENT/i],
+      ["restrictions", /\bRESTRICTION/i],
+      ["dob", /\bDOB\b|\bDate\s+of\s+Birth\b/i],
+      ["expiry", /\bEXP\b|\bEXPIRES?\b/i],
+    ],
+  },
+  {
+    type: "PASSPORT",
+    irsForm: false,
+    strong: [["passport", /\bPASSPORT\b/i]],
+    supporting: [
+      ["passport-number", /\bPassport\s*(Number|No\.?)/i],
+      ["place-of-birth", /\bPlace\s+of\s+Birth\b/i],
+      ["authority", /\bAuthority\b/i],
+      ["nationality", /\bNationality\b/i],
+      // The machine-readable zone at the foot of the data page.
+      ["mrz", /[A-Z0-9<]{25,}/],
+    ],
+  },
+  {
+    type: "SSN_DOCUMENT",
+    irsForm: false,
+    strong: [
+      ["social-security-card", /\bSOCIAL\s+SECURITY\b/i],
+      ["ssa-issued", /\bSocial\s+Security\s+Administration\b/i],
+    ],
+    supporting: [
+      ["ssn-label", /\bSSN\b|\bSocial\s+Security\s+(Number|Account)\b/i],
+      ["card-wording", /THIS\s+NUMBER\s+HAS\s+BEEN\s+ESTABLISHED\s+FOR/i],
+      ["signature", /\bSIGNATURE\b/i],
+    ],
+  },
+  {
+    type: "GOVERNMENT_ID",
+    irsForm: false,
+    strong: [
+      ["identification-card", /\bIDENTIFICATION\s+CARD\b/i],
+      ["state-id", /\bSTATE\s+ID\b/i],
+    ],
+    supporting: [
+      ["id-number", /\bID\s*(Number|No\.?|#)/i],
+      ["dob", /\bDOB\b|\bDate\s+of\s+Birth\b/i],
+      ["expiry", /\bEXP\b|\bEXPIRES?\b/i],
+      ["issued", /\bISS(UED)?\b/i],
+    ],
+  },
 ];
 
 interface Scored {
@@ -246,6 +317,23 @@ export function classifyDocument(pagesText: readonly string[]): Classification {
   }
 
   const [best, runnerUp] = scored;
+
+  // Fail safe toward IDENTITY: see the note above `isIdentityDocument`. An
+  // identity document misread as financial loses every protection that hangs
+  // off its class; a receipt misread as identity only loses the ability to
+  // become a tax proposal, which is recoverable.
+  if (isIdentityDocument(best.type)) {
+    const confidence = confidenceOf(best);
+    return {
+      documentType: best.type,
+      confidence,
+      method: "CONTENT_SIGNALS",
+      signals: [...best.strong, ...best.supporting],
+      reviewRequired: true,
+      reviewReason: "This looks like an identity document, so it is kept private and never used to change your records.",
+    };
+  }
+
   if (runnerUp && runnerUp.score >= best.score - 1) {
     return {
       documentType: "UNKNOWN",

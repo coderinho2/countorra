@@ -29,6 +29,19 @@ export interface LegalFacts {
   refundPolicy: string | null;
   /** Whether listed prices include sales tax / VAT, once decided. */
   taxOnPrices: string | null;
+  /**
+   * How the business states its handling of government identifiers.
+   *
+   * The ENGINEERING treatment is settled and described in the policy itself:
+   * the number is not stored, most fields are discarded, nothing reaches the
+   * ledger or the model. What is NOT settled is the legal characterisation —
+   * which state identity-theft and biometric statutes apply, what notice or
+   * consent they require, and what retention period, if any, is mandated.
+   *
+   * That is a question for a lawyer and not one the code can answer, so it is
+   * a placeholder rather than an invented sentence.
+   */
+  identityDocumentTreatment: string | null;
 }
 
 export const LEGAL_FACTS: LegalFacts = {
@@ -38,6 +51,7 @@ export const LEGAL_FACTS: LegalFacts = {
   governingLaw: null,
   refundPolicy: null,
   taxOnPrices: null,
+  identityDocumentTreatment: null,
 };
 
 export const LEGAL_FACT_LABELS: Record<keyof LegalFacts, string> = {
@@ -47,6 +61,7 @@ export const LEGAL_FACT_LABELS: Record<keyof LegalFacts, string> = {
   governingLaw: "Governing law",
   refundPolicy: "Refund policy",
   taxOnPrices: "Whether prices include sales tax / VAT",
+  identityDocumentTreatment: "Legal statement on handling government identity documents",
 };
 
 export const LEGAL_PLACEHOLDERS_REMAINING: readonly (keyof LegalFacts)[] = (Object.keys(LEGAL_FACTS) as (keyof LegalFacts)[]).filter((key) => LEGAL_FACTS[key] === null);

@@ -229,7 +229,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
         body: [
           "Upload PDF, PNG, JPEG or WEBP files of up to 20 MB. Documents are stored privately in the workspace.",
           "Countorra can read the figures in PDFs that contain real text, such as a W-2 downloaded from a payroll provider. What it reads is shown with where it found it, and reaches tax preparation only as a suggestion you confirm.",
-          "Scanned PDFs and photos are stored but not read: text recognition (OCR) is not available yet, and is marked coming soon on the pricing page.",
+          "Photos and scanned PDFs are read with text recognition (OCR). A receipt or invoice is read by a reader built for that kind of document, which picks out the merchant, the date and the totals. WEBP images are stored but cannot be read.",
         ],
         where: "Documents",
         keywords: ["document", "upload", "receipt", "w-2", "w2", "ocr", "scan", "pdf", "files"],
@@ -457,7 +457,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
           "Free — $0. One workspace, 3 AI requests a day.",
           "Premium — $19 a month. Three workspaces, 100 AI requests a day, and bank connections through Plaid.",
           "Business — $49 a month. Unlimited workspaces, 500 AI requests a day, and bank connections through Plaid.",
-          "Document text recognition (OCR), advanced tax tools and priority support are listed on the pricing page as coming soon. They are not available yet on any plan.",
+          "Advanced tax tools and priority support are listed on the pricing page as coming soon. They are not available yet on any plan.",
         ],
         keywords: ["price", "pricing", "cost", "free", "premium", "business", "plan", "limits", "how much"],
         links: [{ label: "Compare plans", href: "/pricing" }],

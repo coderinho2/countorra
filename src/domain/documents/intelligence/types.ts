@@ -29,7 +29,7 @@
 /** Bumped when classification, extraction or normalization rules change. A
  *  document read under an older version can be read again; one read under the
  *  current version is not re-read (no duplicate extraction). */
-export const PROCESSING_VERSION = "document-intelligence.2026.1";
+export const PROCESSING_VERSION = "document-intelligence.2026.2";
 
 // ── Processing jobs ─────────────────────────────────────────────────────
 
@@ -44,8 +44,9 @@ export type ProcessingJobStatus =
   | "PARTIAL"
   /** Readable text, but the type is uncertain or values conflict. */
   | "REVIEW_REQUIRED"
-  /** Nothing could be read with what is configured — e.g. a scanned image
-   *  with no OCR provider. An honest outcome, not a failure. */
+  /** Nothing could be read with what is configured — a WEBP, which no
+   *  reader accepts, or any image on a deployment with no OCR credentials.
+   *  An honest outcome, not a failure. */
   | "UNSUPPORTED"
   /** The run itself failed. Retryable while attempts remain. */
   | "FAILED";
@@ -55,25 +56,91 @@ export type ExtractionStatus = Extract<ProcessingJobStatus, "SUCCEEDED" | "PARTI
 
 export const EXTRACTION_STATUSES: readonly ExtractionStatus[] = ["SUCCEEDED", "PARTIAL", "REVIEW_REQUIRED", "UNSUPPORTED"];
 
-/** Why a run failed. Stored; safe to show; never a raw provider message. */
+/**
+ * Why a run failed.
+ *
+ * STABLE, INTERNAL, AND NOT THE PROVIDER'S VOCABULARY. Every category here is
+ * one Countorra defines and stores; a vendor's own error name, message,
+ * request id or ARN never reaches this type, a log line, or a person. The
+ * adapter classifies its vendor's errors into these (see
+ * `TextExtractionProvider.classifyError`), which is what keeps the domain
+ * free of AWS.
+ *
+ * `PROVIDER_ERROR` is the unknown bucket — a failure the adapter could not
+ * place. It is deliberately the residual rather than a removed category,
+ * because rows written before the finer categories existed still carry it.
+ */
 export type FailureCategory =
+  /** The stored file could not be fetched. Usually transient. */
   | "DOCUMENT_UNAVAILABLE"
+  /** The stored bytes are not what they claim to be. */
   | "FILE_VALIDATION_FAILED"
+  /** The reader rejected the file's format. */
+  | "UNSUPPORTED_DOCUMENT"
+  /** Past the reader's own size ceiling, which is lower than the upload one. */
+  | "DOCUMENT_TOO_LARGE"
+  /** The reader could not make out the document at all — a blurred photo. */
+  | "DOCUMENT_UNREADABLE"
+  /** The deployment's reader credentials were refused. An operator problem,
+   *  never the person's, and never fixed by trying again. */
+  | "PROVIDER_AUTH_ERROR"
+  /** Rate limited by the reader. Transient by definition. */
+  | "PROVIDER_THROTTLED"
+  /** The reader is down or unreachable. */
+  | "PROVIDER_UNAVAILABLE"
+  /** An error the adapter could not classify. */
   | "PROVIDER_ERROR"
   | "PROVIDER_TIMEOUT"
   | "MALFORMED_PROVIDER_RESPONSE"
   | "LEASE_EXPIRED"
   | "INTERNAL_ERROR";
 
+/**
+ * What a person is told. Actionable where there is an action, honest where
+ * there is not, and free of the reader's name in every case: "Textract" means
+ * nothing to somebody photographing a receipt.
+ */
 export const FAILURE_MESSAGES: Readonly<Record<FailureCategory, string>> = {
-  DOCUMENT_UNAVAILABLE: "The stored file couldn't be read.",
+  DOCUMENT_UNAVAILABLE: "The stored file couldn't be read. Try again in a moment.",
   FILE_VALIDATION_FAILED: "The stored file didn't pass validation, so it wasn't read.",
+  UNSUPPORTED_DOCUMENT: "This file's format can't be read. Try a PDF, PNG or JPEG.",
+  DOCUMENT_TOO_LARGE: "This file is too large to read. Reading works on files up to 10MB — try a smaller scan or a single page.",
+  DOCUMENT_UNREADABLE: "Countorra couldn't make out this document. A clearer, flatter photo in better light usually works.",
+  PROVIDER_AUTH_ERROR: "Document reading isn't available right now. Nothing is wrong with your file — this is being looked into.",
+  PROVIDER_THROTTLED: "Document reading is busy right now. Try again in a minute.",
+  PROVIDER_UNAVAILABLE: "Document reading is temporarily unavailable. Your file is stored; try again shortly.",
   PROVIDER_ERROR: "The reader failed on this file.",
-  PROVIDER_TIMEOUT: "Reading this file took too long and was stopped.",
+  PROVIDER_TIMEOUT: "Reading this file took too long and was stopped. Try again, or try a smaller file.",
   MALFORMED_PROVIDER_RESPONSE: "The reader returned something that couldn't be verified, so nothing was recorded.",
   LEASE_EXPIRED: "A previous attempt stopped before finishing.",
   INTERNAL_ERROR: "Something went wrong while recording the result. Nothing was saved.",
 };
+
+/**
+ * Whether trying again could plausibly produce a different result.
+ *
+ * This is a cost control as much as a UX one. Every retry of a document the
+ * reader has already rejected is another billed call that will fail the same
+ * way, so a permanent failure stops at one attempt instead of three. The
+ * split is by cause, not by severity:
+ *
+ *   TRANSIENT  something outside the document — the network, a rate limit,
+ *              a lease, the storage layer. Worth another attempt.
+ *   PERMANENT  something about the document, the credentials or the contract.
+ *              Identical input, identical outcome; retrying only costs money.
+ */
+export const PERMANENT_FAILURES: readonly FailureCategory[] = [
+  "FILE_VALIDATION_FAILED",
+  "UNSUPPORTED_DOCUMENT",
+  "DOCUMENT_TOO_LARGE",
+  "DOCUMENT_UNREADABLE",
+  "MALFORMED_PROVIDER_RESPONSE",
+  "PROVIDER_AUTH_ERROR",
+];
+
+export function isRetryableFailure(category: FailureCategory): boolean {
+  return !PERMANENT_FAILURES.includes(category);
+}
 
 // ── Classification ──────────────────────────────────────────────────────
 
@@ -92,7 +159,14 @@ export type DocumentType =
   | "BANK_STATEMENT"
   | "INVOICE"
   | "RECEIPT"
+  | "BILL"
   | "OTHER_FINANCIAL"
+  // Identity documents. Held to a different standard throughout: see
+  // DOCUMENT_SENSITIVITY below and ./identity.ts.
+  | "DRIVER_LICENSE"
+  | "PASSPORT"
+  | "SSN_DOCUMENT"
+  | "GOVERNMENT_ID"
   | "UNKNOWN";
 
 export const DOCUMENT_TYPES: readonly DocumentType[] = [
@@ -110,7 +184,12 @@ export const DOCUMENT_TYPES: readonly DocumentType[] = [
   "BANK_STATEMENT",
   "INVOICE",
   "RECEIPT",
+  "BILL",
   "OTHER_FINANCIAL",
+  "DRIVER_LICENSE",
+  "PASSPORT",
+  "SSN_DOCUMENT",
+  "GOVERNMENT_ID",
   "UNKNOWN",
 ];
 
@@ -129,9 +208,46 @@ export const DOCUMENT_TYPE_LABELS: Readonly<Record<DocumentType, string>> = {
   BANK_STATEMENT: "Bank statement",
   INVOICE: "Invoice",
   RECEIPT: "Receipt",
+  BILL: "Bill",
   OTHER_FINANCIAL: "Other financial document",
+  DRIVER_LICENSE: "Driver's licence",
+  PASSPORT: "Passport",
+  SSN_DOCUMENT: "Social Security document",
+  GOVERNMENT_ID: "Government ID",
   UNKNOWN: "Unknown",
 };
+
+/**
+ * WHAT CLASS OF HARM A DOCUMENT CARRIES — the switch that everything
+ * stricter about identity documents hangs from.
+ *
+ * FINANCIAL documents describe money. Their worst case is an embarrassing or
+ * incorrect figure, and the product already handles that with review states.
+ *
+ * IDENTITY documents carry government identifiers. Their worst case is
+ * identity theft, which is permanent and not recoverable by editing a row. So
+ * they are treated differently at every layer, not just at the UI:
+ *
+ *   - the identifier itself is NEVER persisted (./identity.ts)
+ *   - no field of theirs is ever proposed into the ledger or a tax fact
+ *   - the assistant is given the document's existence, never its fields
+ *   - the review screen masks by default and has no reveal control
+ *
+ * A type not listed here is financial by default, which is the safe
+ * direction: adding an identity type without adding it here is caught by
+ * ./identity.test.ts, which pins the whole list.
+ */
+export type DocumentSensitivity = "FINANCIAL" | "IDENTITY";
+
+const IDENTITY_TYPES: readonly DocumentType[] = ["DRIVER_LICENSE", "PASSPORT", "SSN_DOCUMENT", "GOVERNMENT_ID"];
+
+export function documentSensitivity(documentType: DocumentType): DocumentSensitivity {
+  return IDENTITY_TYPES.includes(documentType) ? "IDENTITY" : "FINANCIAL";
+}
+
+export function isIdentityDocument(documentType: DocumentType): boolean {
+  return documentSensitivity(documentType) === "IDENTITY";
+}
 
 export type ClassificationConfidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
 
@@ -189,7 +305,21 @@ export type FieldValueKind =
   /** Whether an identifier is present. The identifier itself is never kept. */
   | "PRESENCE";
 
-export type FieldSection = "DOCUMENT" | "PARTIES" | "INCOME" | "WITHHOLDING" | "DEDUCTIONS" | "STATE" | "LOCAL" | "PERIOD" | "BALANCES" | "TOTALS" | "LINE_ITEMS" | "TRANSACTIONS";
+export type FieldSection =
+  | "DOCUMENT"
+  | "PARTIES"
+  | "INCOME"
+  | "WITHHOLDING"
+  | "DEDUCTIONS"
+  | "STATE"
+  | "LOCAL"
+  | "PERIOD"
+  | "BALANCES"
+  | "TOTALS"
+  | "LINE_ITEMS"
+  | "TRANSACTIONS"
+  /** Identity-document fields. Never proposable, never sent to the model. */
+  | "IDENTITY";
 
 /** Where a currency came from. A currency is never assumed. */
 export type CurrencySource =
@@ -205,7 +335,7 @@ export interface SourcePosition {
   y: number;
   width: number | null;
   height: number | null;
-  units: "pdf_points" | "pixels";
+  units: "pdf_points" | "pixels" | "ratio";
 }
 
 export interface ExtractedFieldDraft {
@@ -264,7 +394,13 @@ export type ExtractionWarning =
   | "MULTIPLE_STATE_ROWS"
   | "CONFLICTING_VALUES"
   | "SENSITIVE_VALUES_MASKED"
-  | "UNSUPPORTED_FONT_ENCODING";
+  | "UNSUPPORTED_FONT_ENCODING"
+  | "IDENTITY_DOCUMENT"
+  | "IDENTIFIERS_NOT_STORED"
+  | "TOTALS_INCONSISTENT"
+  | "OCR_LOW_CONFIDENCE"
+  | "OCR_PAGE_LIMIT"
+  | "OCR_FILE_TOO_LARGE";
 
 export const EXTRACTION_WARNING_TEXT: Readonly<Record<ExtractionWarning, string>> = {
   NO_TEXT_LAYER: "This file has no readable text layer — it looks like a scan or photo.",
@@ -281,4 +417,10 @@ export const EXTRACTION_WARNING_TEXT: Readonly<Record<ExtractionWarning, string>
   CONFLICTING_VALUES: "Some fields were read with different values in different places.",
   SENSITIVE_VALUES_MASKED: "Identifiers such as SSNs and account numbers were masked and not stored.",
   UNSUPPORTED_FONT_ENCODING: "Part of the text uses a font encoding that couldn't be decoded.",
+  IDENTITY_DOCUMENT: "This looks like an identity document. It is kept private, never used to change your records, and never shared with the assistant.",
+  IDENTIFIERS_NOT_STORED: "Any identity or account number on this document was read to check it is there, and deliberately not stored.",
+  TOTALS_INCONSISTENT: "The subtotal, tax and total on this document don't add up, so none of them was adjusted. Check them before using any of them.",
+  OCR_LOW_CONFIDENCE: "The image was hard to read, so the values need checking more carefully than usual.",
+  OCR_PAGE_LIMIT: "Only the first page of this file was read by the image reader.",
+  OCR_FILE_TOO_LARGE: "This file is too large for the image reader, so nothing was read from it.",
 };

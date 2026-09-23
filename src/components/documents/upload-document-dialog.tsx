@@ -130,6 +130,10 @@ export function UploadDocumentDialog({ organizationId }: { organizationId: strin
             >
               <span className="text-[13px] text-text-secondary">{file?.name ?? "Click to choose a PDF or image"}</span>
               <span className="text-[11px] text-text-tertiary">PDF, PNG, JPEG, WEBP — up to {MAX_UPLOAD_LABEL}</span>
+              {/* WEBP is stored but has no reader (file-signature.ts), so the
+                  difference is stated here rather than discovered after an
+                  upload that never produces any figures. */}
+              <span className="text-[11px] text-text-tertiary">Figures are read from PDF, PNG and JPEG</span>
             </label>
             <input
               id="file"

@@ -93,6 +93,21 @@ const serverSchema = z.object({
    * value is a LIST of keys and that is what people type.
    */
   BANK_CREDENTIAL_ENCRYPTION_KEY: z.string().min(32).optional(),
+
+  // -- Amazon Textract (document OCR) -----------------------------------
+  // Server-only. Textract is called from the server with the document bytes
+  // in the request body; no bucket is involved, so no S3 permission is
+  // needed and the document never leaves Supabase Storage for another store.
+  //
+  // Credentials are OPTIONAL in two different senses. The region enables the
+  // reader. The key pair is only needed where no ambient role exists: on a
+  // platform that provides credentials itself (an EC2/ECS/Lambda task role,
+  // or OIDC), leave both unset and the AWS SDK's default provider chain is
+  // used instead, which is strictly better than a long-lived key.
+  /** e.g. "us-east-1". Unset means no OCR reader in this deployment. */
+  AWS_REGION: z.string().min(1).max(32).optional(),
+  AWS_ACCESS_KEY_ID: z.string().min(16).optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().min(1).optional(),
 });
 
 /**
@@ -119,6 +134,26 @@ function assertBankConfigurationIsWhole(env: z.infer<typeof serverSchema>): void
     throw new Error(
       "Plaid is configured but BANK_CREDENTIAL_ENCRYPTION_KEY is not. A bank access token must be encrypted before it is stored, so connecting a bank is refused until the key exists. See PLAID-INTEGRATION.md.",
     );
+  }
+}
+
+/**
+ * Textract is configured only in a shape that can actually authenticate.
+ *
+ * A region with exactly one half of a key pair is the failure that would
+ * otherwise surface as an opaque AWS credential error on somebody's receipt,
+ * so it is refused at configuration time instead.
+ */
+function assertTextractConfigurationIsWhole(env: z.infer<typeof serverSchema>): void {
+  const hasId = env.AWS_ACCESS_KEY_ID !== undefined;
+  const hasSecret = env.AWS_SECRET_ACCESS_KEY !== undefined;
+  if (hasId !== hasSecret) {
+    throw new Error(
+      `AWS credentials are partly configured: ${hasId ? "AWS_SECRET_ACCESS_KEY" : "AWS_ACCESS_KEY_ID"} is missing. Set both, or neither to use the deployment's own IAM role.`,
+    );
+  }
+  if (!env.AWS_REGION && (hasId || hasSecret)) {
+    throw new Error("AWS credentials are set but AWS_REGION is not, so no Textract endpoint can be chosen. Set AWS_REGION, or unset the credentials.");
   }
 }
 
@@ -156,8 +191,12 @@ export function serverEnv() {
       // already typed their bank password, because the credential store would
       // be missing at exactly that moment.
       BANK_CREDENTIAL_ENCRYPTION_KEY: process.env.BANK_CREDENTIAL_ENCRYPTION_KEY || process.env.BANK_CREDENTIAL_ENCRYPTION_KEYS || undefined,
+      AWS_REGION: process.env.AWS_REGION || undefined,
+      AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || undefined,
+      AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || undefined,
     });
     assertBankConfigurationIsWhole(cachedServerEnv);
+    assertTextractConfigurationIsWhole(cachedServerEnv);
   }
   return cachedServerEnv;
 }

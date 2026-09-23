@@ -151,7 +151,7 @@ describe("operations reporting", () => {
       if (typeof value === "object" && value) for (const n of Object.values(value)) expect(typeof n).toBe("number");
       else expect(typeof value).toBe("number");
     }
-    expect(await service(async (query) => one<{ v: string }>(await query(`select operations_schema_version() as v`)).v)).toBe("0054");
+    expect(await service(async (query) => one<{ v: string }>(await query(`select operations_schema_version() as v`)).v)).toBe("0056");
   });
 
   it("is not callable by a signed-in member or an anonymous visitor", async () => {

@@ -226,7 +226,10 @@ describe("files that must not be parsed", () => {
   it("refuses bytes that are not what the document claims to be — before any parser sees them", async () => {
     const html = new Uint8Array(Buffer.from("<html><body onload=alert(1)>%PDF-1.7</body></html>"));
     const outcome = await run({ download: vi.fn(async () => ({ ok: true as const, bytes: html })), providers: [failing("throw")] });
-    expect(outcome).toMatchObject({ kind: "failed", category: "FILE_VALIDATION_FAILED", canRetry: true });
+    // canRetry is false by CAUSE, not by budget: the same bytes will fail
+    // the same signature check every time, so offering another attempt would
+    // send someone round a loop that cannot succeed.
+    expect(outcome).toMatchObject({ kind: "failed", category: "FILE_VALIDATION_FAILED", canRetry: false });
   });
 
   it("refuses an oversized object, however it is reported", async () => {

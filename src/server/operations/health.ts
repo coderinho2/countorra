@@ -31,7 +31,7 @@ import { measureDependency, runtimeIdentity } from "@/lib/observability";
 
 /** The migration this build expects the database to have reached. Keep in
  *  step with `operations_schema_version()` in the latest migration. */
-export const EXPECTED_SCHEMA_VERSION = "0054";
+export const EXPECTED_SCHEMA_VERSION = "0056";
 
 const DATABASE_TIMEOUT_MS = 3_000;
 const CACHE_MS = 15_000;

@@ -1,4 +1,4 @@
-import { PROCESSING_VERSION, type ProcessingJobStatus } from "./types";
+import { isRetryableFailure, PROCESSING_VERSION, type FailureCategory, type ProcessingJobStatus } from "./types";
 
 /**
  * THE PROCESSING-JOB STATE MACHINE.
@@ -10,7 +10,9 @@ import { PROCESSING_VERSION, type ProcessingJobStatus } from "./types";
  *
  *   QUEUED ──▶ PROCESSING ──▶ SUCCEEDED | PARTIAL | REVIEW_REQUIRED | UNSUPPORTED
  *     │            │
- *     └──▶ FAILED ◀┘ ──▶ QUEUED   (retry, while attempts remain)
+ *     └──▶ FAILED ◀┘ ──▶ QUEUED   (retry, while attempts remain AND the
+ *                                  failure was transient — a permanent one
+ *                                  stops at the first attempt)
  *
  * WHAT IS DELIBERATELY NOT HERE
  *
@@ -84,6 +86,9 @@ export interface JobSnapshot {
   maxAttempts: number;
   idempotencyKey: string;
   startedAt: string | null;
+  /** Why the last attempt failed, when one did. Decides whether another
+   *  attempt could possibly differ — see `isRetryableFailure`. */
+  failureCategory?: FailureCategory | null;
 }
 
 export type ProcessingDecision =
@@ -100,7 +105,11 @@ export type ProcessingDecision =
   /** The last attempt failed and attempts remain. */
   | { kind: "retry"; jobId: string }
   /** The last attempt failed and none remain. */
-  | { kind: "attempts_exhausted"; jobId: string };
+  | { kind: "attempts_exhausted"; jobId: string }
+  /** The last attempt failed for a reason another attempt cannot change —
+   *  the format, the size, the credentials. Attempts may remain; spending
+   *  them would be three identical failures and three billed calls. */
+  | { kind: "permanently_failed"; jobId: string; category: FailureCategory };
 
 /**
  * What a request to read a document should do, given the jobs that exist.
@@ -121,8 +130,14 @@ export function decideProcessingRequest(jobs: readonly JobSnapshot[], identity: 
       if (!isLeaseExpired(job, now)) return { kind: "in_progress", jobId: job.id };
       return { kind: "recover_expired", jobId: job.id, canRetryAfter: job.attempts < job.maxAttempts };
     }
-    case "FAILED":
+    case "FAILED": {
+      // Cause before budget: a file the reader cannot parse is not worth two
+      // more attempts just because the budget allows them.
+      if (job.failureCategory && !isRetryableFailure(job.failureCategory)) {
+        return { kind: "permanently_failed", jobId: job.id, category: job.failureCategory };
+      }
       return job.attempts < job.maxAttempts ? { kind: "retry", jobId: job.id } : { kind: "attempts_exhausted", jobId: job.id };
+    }
     default:
       return { kind: "already_processed", jobId: job.id, status: job.status };
   }

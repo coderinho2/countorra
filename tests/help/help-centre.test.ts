@@ -147,8 +147,11 @@ describe("statements match the product", () => {
     expect(plans).toMatch(/Business — \$49 a month\. Unlimited workspaces/);
   });
 
-  it("calls unbuilt features coming soon, and bank connections available on paid plans", () => {
-    expect(FEATURE_IMPLEMENTED.documentProcessing).toBe(false);
+  it("calls unbuilt features coming soon, and built ones available on paid plans", () => {
+    // Document processing became true when Textract shipped; the Help Centre
+    // article about scans was rewritten in the same change, which is what
+    // this case exists to keep in step.
+    expect(FEATURE_IMPLEMENTED.documentProcessing).toBe(true);
     expect(FEATURE_IMPLEMENTED.advancedTaxTools).toBe(false);
     expect(FEATURE_IMPLEMENTED.prioritySupport).toBe(false);
     expect(FEATURE_IMPLEMENTED.bankConnections).toBe(true);
