@@ -175,7 +175,19 @@ function assessIncomePresence({ facts, declaredIncomeKinds }: CompletenessInput)
       blocking: true,
       resolution: "Enter at least one income figure and confirm it. Proposed values are not used in a calculation until confirmed.",
     });
-    return issues;
+    // Deliberately falls through to the PROPOSED note below instead of
+    // returning here.
+    //
+    // It used to return, which suppressed that note in the one case where it
+    // is most useful: somebody whose only figures came from a document has
+    // nothing confirmed AND suggestions waiting, and was told the first
+    // without the second. They then had no way to know that the fix was two
+    // clicks away on the same page.
+    //
+    // The declared-income loop IS skipped, because with nothing confirmed it
+    // would repeat "no amount entered" for every declared kind alongside a
+    // blocker that already says exactly that.
+    return [...issues, ...proposedNote(facts)];
   }
 
   // Someone said they had a W-2 job but no wage figure exists. That is a
@@ -196,9 +208,16 @@ function assessIncomePresence({ facts, declaredIncomeKinds }: CompletenessInput)
     });
   }
 
+  return [...issues, ...proposedNote(facts)];
+}
+
+/** Suggestions waiting for review. Not a blocker — but the thing a person
+ *  most needs to know when nothing is confirmed yet. */
+function proposedNote(facts: CompletenessInput["facts"]): PreparationIssue[] {
   const proposed = facts.filter((fact) => fact.state === "PROPOSED");
-  if (proposed.length > 0) {
-    issues.push({
+  if (proposed.length === 0) return [];
+  return [
+    {
       id: "PROPOSED_FACTS_PENDING",
       severity: "WARNING",
       category: "INCOME",
@@ -206,10 +225,8 @@ function assessIncomePresence({ facts, declaredIncomeKinds }: CompletenessInput)
       affects: "facts",
       blocking: false,
       resolution: "Review each suggestion and confirm or reject it. Only confirmed values reach the calculation.",
-    });
-  }
-
-  return issues;
+    },
+  ];
 }
 
 /**

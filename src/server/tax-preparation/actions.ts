@@ -68,7 +68,23 @@ export interface TaxPreparationActionResult {
   error?: string;
   success?: boolean;
   message?: string;
+  /**
+   * What is actually blocking a calculation, when one was refused.
+   *
+   * A count on its own — "blocked by 2 unresolved issues" — tells someone how
+   * much trouble they are in and nothing about how to get out of it. The
+   * issues are already computed here, they already carry a message and a
+   * resolution, and the form that showed the count is the right place to show
+   * them. Structured rather than concatenated into the error string so the
+   * form can lay them out, and bounded so a pathological case cannot fill the
+   * screen.
+   */
+  blockers?: readonly { id: string; message: string; resolution: string | null }[];
 }
+
+/** Blocking issues shown at the point of refusal. More than this and the
+ *  list stops being read; the full set is always on the page above. */
+const MAX_SHOWN_BLOCKERS = 4;
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -474,6 +490,9 @@ export async function calculateTaxPreparationAction(_prev: TaxPreparationActionR
     revalidatePath(pagePath(parsed.data.organizationId));
     return {
       error: `Calculation is blocked by ${completeness.blockers.length} unresolved ${completeness.blockers.length === 1 ? "issue" : "issues"}. Resolve ${completeness.blockers.length === 1 ? "it" : "them"} and calculate again.`,
+      // Named, not just counted. Every one of these is resolvable in a form
+      // further down this same page.
+      blockers: completeness.blockers.slice(0, MAX_SHOWN_BLOCKERS).map((issue) => ({ id: issue.id, message: issue.message, resolution: issue.resolution })),
     };
   }
 

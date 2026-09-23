@@ -147,9 +147,22 @@ export function CalculateForm({ organizationId, caseId, blockerCount }: { organi
         {pending ? "Calculating…" : "Calculate"}
       </Button>
       {state.error && (
-        <p role="alert" className="text-text-secondary max-w-[40ch] text-right text-[13px]">
-          {state.error}
-        </p>
+        <div role="alert" className="flex max-w-[52ch] flex-col items-end gap-1.5">
+          <p className="text-text-secondary text-right text-[13px]">{state.error}</p>
+          {/* The blockers by name. Without these the refusal is a number:
+              someone is told they have two problems and left to work out
+              which two, from a list that also contains warnings and notes. */}
+          {state.blockers && state.blockers.length > 0 && (
+            <ul className="border-border-subtle flex list-none flex-col gap-1.5 border-t pt-1.5 text-right">
+              {state.blockers.map((blocker) => (
+                <li key={blocker.id} className="flex flex-col gap-0.5">
+                  <span className="text-text-primary text-[13px]">{blocker.message}</span>
+                  {blocker.resolution && <span className="text-text-tertiary text-[12px] leading-[1.5]">{blocker.resolution}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </form>
   );

@@ -67,7 +67,11 @@ const RESULT_BADGE: Record<ResultStatus, { label: string; variant: BadgeProps["v
 };
 
 const SEVERITY_BADGE: Record<IssueSeverity, { label: string; variant: BadgeProps["variant"] }> = {
-  BLOCKER: { label: "Blocks calculation", variant: "warning" },
+  // A blocker and a non-blocking ERROR shared the `warning` variant, so the
+  // two rows that actually stop a calculation were indistinguishable at a
+  // glance from the ones that do not — in a list where "Blocking issues: 2"
+  // is the number the person is trying to act on.
+  BLOCKER: { label: "Blocks calculation", variant: "negative" },
   ERROR: { label: "Needs fixing", variant: "warning" },
   WARNING: { label: "Review", variant: "neutral" },
   INFO: { label: "Note", variant: "info" },
