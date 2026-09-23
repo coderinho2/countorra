@@ -16,6 +16,7 @@ import { LockMark } from "./lock-mark";
 import { NAV_GROUPS, DIRECT_LINKS } from "./nav-data";
 import { isNavItemActive, mobileNavItemClass } from "./nav-active";
 import { DropdownNavigation, type DropdownNavItem } from "@/components/ui/dropdown-navigation";
+import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 
 /** DESIGN.md §14's identity-mark language ("a small solid-color initial
  *  mark — a 24px square, radius-sm, ink background, single-letter glyph
@@ -112,6 +113,10 @@ export function MarketingHeader({
         </div>
 
         <div className="hidden items-center gap-2 lg:flex">
+          {/* Leading the utility cluster, before anything that navigates: a
+              preference, not a destination. */}
+          <ThemeSwitcher className="mr-1" />
+
           {identity ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -221,6 +226,11 @@ export function MarketingHeader({
             })}
           </div>
           <div className="mt-4 flex flex-col gap-2">
+            <div className="mb-1 flex items-center justify-between rounded-sm border border-border-subtle px-3 py-2">
+              <span className="text-[14px] text-text-secondary">Appearance</span>
+              <ThemeSwitcher />
+            </div>
+
             {identity ? (
               <>
                 <div className="mb-1 flex items-center gap-2 rounded-sm border border-border-subtle px-3 py-2.5">

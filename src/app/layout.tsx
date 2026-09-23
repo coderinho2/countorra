@@ -4,6 +4,8 @@ import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { publicEnv } from "@/lib/env";
 import { CspNonce } from "@/components/security/csp-nonce";
+import { ThemeProvider } from "@/components/theme/theme-provider";
+import { requestNonce } from "@/server/security/request-nonce";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -92,14 +94,20 @@ export const metadata: Metadata = {
  */
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   await connection();
+  const nonce = await requestNonce();
   return (
+    // `suppressHydrationWarning` covers exactly one thing: next-themes sets
+    // `data-theme` and `style.color-scheme` on this element before React
+    // hydrates, so the server's markup and the browser's legitimately differ
+    // here. It applies only to this element's own attributes, not its tree.
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-paper text-text-primary">
         <CspNonce />
-        {children}
+        <ThemeProvider nonce={nonce}>{children}</ThemeProvider>
       </body>
     </html>
   );

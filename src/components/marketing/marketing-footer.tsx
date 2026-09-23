@@ -26,7 +26,7 @@ const COLUMNS = [
       { label: "Help Centre", href: "/help" },
       { label: "Contact support", href: SUPPORT_MAILTO },
       { label: "How it works", href: "/resources#how-it-works" },
-      { label: "Guides", href: "/resources#guides" },
+      { label: "Financial guides", href: "/guides" },
     ],
   },
   {

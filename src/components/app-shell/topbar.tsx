@@ -4,6 +4,7 @@ import { NotificationBell } from "./notification-bell";
 import { MobileNav } from "./mobile-nav";
 import { Breadcrumb } from "./breadcrumb";
 import { AccountMenu } from "./account-menu";
+import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import type { UserEntityType } from "@/domain/organizations/types";
 import type { Notification } from "@/server/db/repositories/notifications";
 
@@ -45,6 +46,9 @@ export function Topbar({
       </div>
 
       <div className="flex items-center gap-1">
+        {/* Hidden on small screens, where the drawer carries it (mobile-nav):
+            at 375px the bar needs its width for the workspace name. */}
+        <ThemeSwitcher className="mr-1 hidden sm:inline-flex" />
         <CommandPalette organizationId={orgId} entityType={entityType} />
         <NotificationBell organizationId={orgId} initialNotifications={notifications} />
         <AccountMenu userEmail={userEmail} settingsHref={`/app/${orgId}/settings`} signOutAction={signOut} />

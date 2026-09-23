@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { UserEntityType } from "@/domain/organizations/types";
 import { SETTINGS_ITEM, visibleNavGroups, type NavItem } from "./nav-items";
 import { BrandRow } from "./sidebar";
+import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 
 /**
  * DESIGN.md §23: the sidebar collapses to an overlay drawer below `lg`,
@@ -132,8 +133,14 @@ export function MobileNav({ orgId, entityType, orgName }: { orgId: string; entit
             ))}
           </nav>
 
-          <div className="border-border-subtle border-t px-3 py-3">
+          <div className="border-border-subtle flex flex-col gap-1 border-t px-3 py-3">
             <DrawerLink item={SETTINGS_ITEM} orgId={orgId} pathname={pathname} onNavigate={close} />
+            {/* The topbar drops the switcher below sm, so on a phone this
+                drawer is the only way to reach it inside the app. */}
+            <div className="flex items-center justify-between px-3 py-1.5">
+              <span className="text-text-secondary text-[14px]">Appearance</span>
+              <ThemeSwitcher />
+            </div>
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

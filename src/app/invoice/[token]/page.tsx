@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Invoice — Countorra",
+  title: "Invoice",
   robots: { index: false, follow: false, nocache: true },
 };
 

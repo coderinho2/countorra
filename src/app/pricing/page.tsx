@@ -16,7 +16,7 @@ import { ctaModeFor, resolveBillingViewer } from "@/server/billing/viewer-contex
 import type { PlanTier } from "@/types/database";
 
 export const metadata: Metadata = {
-  title: "Pricing — Countorra",
+  title: "Pricing",
   description: "One financial system, priced by how much of it you use.",
 };
 

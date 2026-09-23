@@ -39,9 +39,11 @@ const External = ({ href, children }: { href: string; children: React.ReactNode 
  *     (src/server/bank-connections/credential-crypto.ts, migration 0048)
  *   Stripe — Checkout and the Customer Portal; the app stores customer id,
  *     price, plan, status and period only (migration 0035)
- *   Resend — invoice email, only when EMAIL_PROVIDER=resend
+ *   Resend — Supabase Auth's SMTP transport for account email: confirm
+ *     address, reset password, change email, password changed
  *   no OCR provider — PDF text layer only (src/server/documents)
- *   no browser storage, no analytics, no error-tracking vendor
+ *   browser storage — the theme preference only (next-themes)
+ *   no analytics, no error-tracking vendor
  *   account deletion — src/server/account/actions.ts#deleteAccountAction
  *   audit logs survive deletion, detached (migrations 0009, 0025)
  *
@@ -77,7 +79,7 @@ export default function PrivacyPage() {
                 password is hashed by Supabase; we never see or store it in plain text.
               </li>
               <li>
-                <Strong>Financial information you enter</Strong> — accounts, transactions, invoices, customers and the details you record about them.
+                <Strong>Financial information you enter</Strong> — accounts, transactions and the details you record about them.
               </li>
               <li>
                 <Strong>Bank connection data, if you choose to connect a bank</Strong> — see <a href="#bank-connections" className="text-accent hover:underline">§6</a>.
@@ -115,10 +117,14 @@ export default function PrivacyPage() {
                 <Strong>A short-lived bank sign-in cookie</Strong>, only while you are connecting a bank. It is encrypted, cannot be read by scripts on the page,
                 lasts at most 30 minutes, and lets your bank send you back to Countorra and finish connecting. It is removed when the connection finishes.
               </li>
+              <li>
+                <Strong>Your appearance preference</Strong> — whether you chose the light or dark theme — kept in your browser&apos;s local storage so the choice
+                survives a refresh. It is the word &ldquo;light&rdquo; or &ldquo;dark&rdquo;, it is not linked to your account, and it is never sent to us.
+              </li>
             </ul>
             <p>
-              We do not use advertising cookies, tracking pixels or analytics cookies, and Countorra does not store personal data in your browser&apos;s local or
-              session storage. When you use Plaid&apos;s window to connect a bank, or Stripe&apos;s pages to pay, those services operate under their own policies,
+              We do not use advertising cookies, tracking pixels or analytics cookies, and apart from the appearance preference above, Countorra does not store
+              anything in your browser&apos;s local or session storage. When you use Plaid&apos;s window to connect a bank, or Stripe&apos;s pages to pay, those services operate under their own policies,
               linked below.
             </p>
           </Section>
@@ -139,8 +145,8 @@ export default function PrivacyPage() {
             <p>We share the minimum data needed with these providers, each for one purpose:</p>
             <ul className="list-disc pl-5">
               <li>
-                <Strong>Supabase</Strong> — database, authentication, file storage, and the emails that verify your address and reset your password. The account,
-                financial, document and conversation data described in §2 is stored with Supabase.
+                <Strong>Supabase</Strong> — database, authentication and file storage. The account, financial, document and conversation data described in §2 is
+                stored with Supabase. Supabase Auth also generates the account emails described below, which are delivered through Resend.
               </li>
               <li>
                 <Strong>Vercel</Strong> — hosting. Your requests pass through Vercel&apos;s servers, which process information such as your IP address and keep
@@ -158,8 +164,8 @@ export default function PrivacyPage() {
                 <Strong>Stripe</Strong> — only if you subscribe to a paid plan. See §7 and <External href={STRIPE_PRIVACY_POLICY_URL}>Stripe&apos;s privacy policy</External>.
               </li>
               <li>
-                <Strong>Resend</Strong> — only if invoice emailing is enabled: when you send an invoice by email, the recipient&apos;s address and the invoice
-                message are sent through Resend for delivery.
+                <Strong>Resend</Strong> — delivery of account and security emails. When Countorra confirms a new address, resets a password, confirms an email
+                change, or tells you your password was changed, your email address and that message pass through Resend so it can be delivered.
               </li>
             </ul>
             <p>

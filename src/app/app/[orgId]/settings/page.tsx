@@ -27,10 +27,12 @@ import { Amount } from "@/components/amount";
 import { money } from "@/domain/money/money";
 import { isSupportedCurrency } from "@/domain/money/currency";
 import { cn } from "@/lib/utils";
+import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import type { PlanTier } from "@/types/database";
 
 const SECTIONS = [
   { id: "profile", label: "Profile" },
+  { id: "appearance", label: "Appearance" },
   { id: "organization", label: "Workspace" },
   { id: "categories", label: "Categories" },
   { id: "members", label: "Members" },
@@ -116,6 +118,13 @@ export default async function SettingsPage({ params }: { params: Promise<{ orgId
         <div className="flex min-w-0 flex-1 flex-col gap-12">
           <SettingsSection id="profile" title="Profile" description="How you appear to other people in this workspace.">
             <ProfileForm fullName={profile?.fullName ?? null} email={user.email ?? ""} />
+          </SettingsSection>
+
+          {/* The topbar carries this control on every screen; Settings is
+              where people look for a preference when they cannot remember
+              where the control was. Same component, one stored value. */}
+          <SettingsSection id="appearance" title="Appearance" description="Whether Countorra is shown light or dark. Saved in this browser.">
+            <ThemeSwitcher />
           </SettingsSection>
 
           <SettingsSection

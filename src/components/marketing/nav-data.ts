@@ -88,7 +88,7 @@ export const RESOURCES_MENU: NavGroup = {
       items: [
         { label: "Help Centre", description: "How to use Countorra, and answers to common questions.", href: "/help", icon: Lifebuoy },
         { label: "How it works", description: "The product story, end to end.", href: "/resources#how-it-works", icon: Compass },
-        { label: "Financial guides", description: "Practical guidance on organizing your finances.", href: "/resources#guides", icon: BookOpen },
+        { label: "Financial guides", description: "Practical guidance on organizing your finances.", href: "/guides", icon: BookOpen },
         { label: "Security architecture", description: "How data isolation and access control work.", href: "/security", icon: ShieldCheck },
       ],
     },

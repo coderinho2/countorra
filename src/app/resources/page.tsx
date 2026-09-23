@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BookOpen } from "@phosphor-icons/react/dist/ssr/BookOpen";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { Reveal } from "@/components/marketing/reveal";
-import { EmptyState } from "@/components/ui/empty-state";
+import { GUIDES, readingMinutes } from "@/components/guides/guides-content";
 
 export const metadata: Metadata = {
-  title: "Resources — Countorra",
+  title: "Resources",
   description: "How Countorra works, and where the product is headed.",
 };
+
+/** The four the most people need first; the rest are one click away. */
+const FEATURED_GUIDES = GUIDES.slice(0, 4);
 
 const CHAPTERS = [
   { number: "01", title: "See everything.", body: "Income, spending, accounts and your tax year, read as one connected system instead of five separate spreadsheets." },
@@ -64,13 +66,34 @@ export default function ResourcesPage() {
       </section>
 
       <section id="guides" className="border-t border-border-subtle bg-surface-sunken/40">
-        <div className="mx-auto max-w-[1200px] px-6 py-16 lg:px-10">
+        <div className="mx-auto max-w-[720px] px-6 py-14 lg:px-10 lg:py-16">
           <Reveal>
-            <EmptyState
-              icon={<BookOpen size={24} />}
-              title="Financial guides aren't published yet"
-              description="Practical guidance on organizing your finances is planned for this section."
-            />
+            <h2 className="font-numeric flex items-center gap-3 border-b border-border pb-2.5 text-[10px] tracking-[0.14em] text-text-tertiary uppercase">
+              Financial guides<span aria-hidden="true" className="h-px flex-1 bg-border-subtle" />
+            </h2>
+          </Reveal>
+          {/* A sample, not the whole shelf — the index at /guides is the
+              place that lists everything, and duplicating it here would put two
+              listings out of step the first time one changes. */}
+          <ul className="mt-6 flex flex-col divide-y divide-border-subtle">
+            {FEATURED_GUIDES.map((guide) => (
+              <li key={guide.slug}>
+                <Reveal>
+                  <Link href={`/guides/${guide.slug}`} className="group flex flex-col gap-1.5 py-5 sm:flex-row sm:items-baseline sm:gap-6">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-[16px] font-semibold text-ink group-hover:text-accent">{guide.title}</h3>
+                      <p className="mt-1.5 max-w-[62ch] text-[14px] leading-[1.6] text-text-secondary">{guide.summary}</p>
+                    </div>
+                    <span className="font-numeric shrink-0 text-[12px] text-text-tertiary">{readingMinutes(guide)} min read</span>
+                  </Link>
+                </Reveal>
+              </li>
+            ))}
+          </ul>
+          <Reveal className="mt-6">
+            <Link href="/guides" className="text-[14px] text-accent hover:underline">
+              All {GUIDES.length} financial guides →
+            </Link>
           </Reveal>
         </div>
       </section>

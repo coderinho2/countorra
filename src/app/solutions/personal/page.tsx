@@ -5,7 +5,7 @@ import { CategoryBreakdown } from "@/components/charts/category-breakdown";
 import { money } from "@/domain/money/money";
 
 export const metadata: Metadata = {
-  title: "Personal — Countorra",
+  title: "Personal",
   description: "Understand everyday spending, recurring costs, and financial health.",
 };
 

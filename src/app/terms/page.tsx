@@ -61,7 +61,7 @@ export default function TermsPage() {
 
           <Section id="the-service" title="2. What Countorra is">
             <p>
-              Countorra is software for keeping your own financial records: accounts and transactions, invoices and customers, documents, reports, an AI assistant
+              Countorra is software for keeping your own personal financial records: accounts and transactions, documents, reports, an AI assistant
               that answers from your records, estimates of certain US income taxes, and a workspace for organizing tax information. If you choose, it can import
               transactions from your bank through Plaid.
             </p>

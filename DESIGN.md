@@ -788,6 +788,18 @@ primary expression — graphite `#0C0C0B` with gold `#D6A84F` — and light
 mode is its warm-paper counterpart. Both follow the operating system, as
 before. Full values in [3. Color Palette](#3-color-palette).
 
+**Revision (2026-09-23):** the operating system is now the DEFAULT rather
+than the only input. A visitor can choose Light or Dark explicitly, and
+that choice is remembered and wins everywhere until they change it; until
+they do, the OS still decides. The control is a two-option segmented pill
+(`src/components/ui/theme-switcher.tsx`) in the marketing header, the app
+topbar, both mobile navigations and Settings — one preference, one
+provider, one stored value. "System" is deliberately not offered as a
+visible third option: it is the default state, not something a person
+wants to select. Implementation is `next-themes` writing `data-theme` on
+`<html>`, which is the contract the token blocks in
+`src/app/globals.css` were already written against.
+
 Dark surfaces stay near `#0C0C0B`–`#22221F` — deliberately not literal
 `#000000` (a truly zero-luminance fill crushes hairline borders and
 prevents any surface from reading as "lifted" above it), but close enough

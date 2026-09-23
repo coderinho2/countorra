@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { money, format } from "@/domain/money/money";
 
 export const metadata: Metadata = {
-  title: "Product — Countorra",
+  title: "Product",
   description: "Financial intelligence, your accounts and transactions, personal tax preparation, and documents in one system.",
 };
 
