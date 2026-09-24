@@ -37,6 +37,7 @@ vi.mock("@/server/supabase/admin", () => ({
 vi.mock("@/server/billing/stripe-config", () => ({ isBillingConfigured: () => true }));
 vi.mock("@/server/bank-connections/providers", () => ({ bankProviderConfigured: () => false }));
 vi.mock("@/server/email/config", () => ({ emailConfig: () => null }));
+vi.mock("@/server/documents/textract/client", () => ({ textractConfigured: () => true }));
 vi.mock("@/lib/observability", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/observability")>();
   return {
@@ -96,8 +97,8 @@ describe("readiness", () => {
   it("gives operators the breakdown — booleans and versions, never a secret", async () => {
     const body = await (await ready(req("/api/health/ready", TOKEN))).json();
     expect(body.checks.database.ok).toBe(true);
-    expect(body.checks.schema).toEqual({ ok: true, expected: "0056", actual: "0056" });
-    expect(body.integrations).toEqual({ stripe: true, plaid: false, email: false, bankWorkerCron: true, operationsToken: true });
+    expect(body.checks.schema).toEqual({ ok: true, expected: "0057", actual: "0057" });
+    expect(body.integrations).toEqual({ stripe: true, plaid: false, email: false, documentOcr: true, bankWorkerCron: true, operationsToken: true });
     expect(JSON.stringify(body)).not.toContain(TOKEN);
     expect(JSON.stringify(body)).not.toContain("service-role-secret");
   });

@@ -51,34 +51,30 @@ function field(formData: FormData, name: string): string | undefined {
 }
 
 /**
- * Two separate facts, checked in this order and never conflated — the same
- * shape as `bankAccess` in src/server/bank-connections/actions.ts.
+ * Whether this workspace may reach a BILLED reader.
  *
- * Whether a READER EXISTS on this deployment is not a question about the
- * customer's plan, and no purchase changes it. Only once one does is the plan
- * asked, from the canonical entitlement model (a lapsed subscription is Free
- * there, so it is Free here).
+ * WHAT THIS DELIBERATELY DOES NOT DO, AND THE BUG THAT TAUGHT IT.
  *
- * WHY THIS IS ENFORCED HERE AND NOT ONLY ON THE PAGE. The button that runs a
- * read is rendered by a page that already knows the plan, so a Free workspace
- * does not see it. That is presentation. This is the check that matters: a
- * Server Action is a public endpoint, and anyone can post to it with a
- * document id. Without this, a Free workspace could run billed OCR by
- * replaying the form — the pricing page advertises document reading as part
- * of Premium and Business, and an advertised gate that is not enforced is
- * just an expensive suggestion.
+ * It used to refuse the whole action whenever Textract was configured, which
+ * meant that the moment AWS credentials were added in production, a Free
+ * workspace could no longer read a digital PDF — a file handled entirely by
+ * the local text-layer reader, which makes no provider call and costs
+ * nothing. The refusal even said "scans and photos", which is not what the
+ * person had uploaded. The comment described the intended behaviour; the code
+ * did something else.
+ *
+ * So this no longer decides whether the ACTION may run. It answers one
+ * narrower question — may this request reach a call that costs money — and
+ * `processDocument` applies that answer at each of the three places a billed
+ * call can happen. A free local read proceeds on every plan.
+ *
+ * Returns true when no paid reader is configured at all: with nothing to
+ * bill, there is nothing to gate, and a deployment without credentials must
+ * not start telling people to upgrade.
  */
-async function readerAccess(client: Awaited<ReturnType<typeof createClient>>, organizationId: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!textractConfigured()) {
-    // Not a plan problem, so it is not phrased as one. Digital PDFs still
-    // read locally; this only governs scans and photos.
-    return { ok: true };
-  }
-  const entitlements = entitlementsFor(await getSubscription(client, organizationId));
-  if (!entitlements.documentProcessing) {
-    return { ok: false, error: `Reading scans and photos is part of Premium and Business. This workspace is on ${entitlements.name}.` };
-  }
-  return { ok: true };
+async function allowsPaidOcr(client: Awaited<ReturnType<typeof createClient>>, organizationId: string): Promise<boolean> {
+  if (!textractConfigured()) return true;
+  return entitlementsFor(await getSubscription(client, organizationId)).documentProcessing;
 }
 
 const STATUS_MESSAGE: Record<string, string> = {
@@ -100,14 +96,14 @@ export async function processDocumentAction(_prev: DocumentIntelligenceActionRes
 
   const client = await createClient();
 
-  // After the rate limit, before any provider call: an unentitled request
-  // must cost nothing at AWS.
-  const access = await readerAccess(client, parsed.data.organizationId);
-  if (!access.ok) return { error: access.error };
+  // Read once, after the rate limit and before anything is processed. The
+  // decision travels into the pipeline rather than blocking the action, so a
+  // free local read still happens on every plan.
+  const allowPaidOcr = await allowsPaidOcr(client, parsed.data.organizationId);
 
   try {
     const outcome = await processDocument(
-      { client, admin: createAdminClient(), providers: configuredProviders(), now: () => new Date(), download: downloadDocumentBytes },
+      { client, admin: createAdminClient(), providers: configuredProviders(), now: () => new Date(), download: downloadDocumentBytes, allowPaidOcr },
       { organizationId: parsed.data.organizationId, documentId: parsed.data.documentId, userId: user.id },
     );
 

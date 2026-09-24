@@ -66,7 +66,7 @@ export function createPgliteBankStore(db: TestDatabase): BankStore {
   });
 
   const EXTERNAL_COLUMNS = `e.id, e.connection_id, e.linked_account_id, e.revision, e.status, e.direction, e.amount_minor, e.currency, e.transaction_date::text as transaction_date,
-    e.merchant_name, e.description, e.reconciliation_state, e.review_reason, e.review_resolved_revision, e.ledger_transaction_id, e.ledger_link_kind,
+    e.merchant_name, e.description, e.category_hint, e.transfer_counterpart_id, e.reconciliation_state, e.review_reason, e.review_resolved_revision, e.ledger_transaction_id, e.ledger_link_kind,
     e.ledger_linked_at::text as ledger_linked_at, e.ledger_written_account_id, e.ledger_written_kind, e.ledger_written_amount_minor, e.ledger_written_currency,
     e.ledger_written_occurred_on::text as ledger_written_occurred_on, e.ledger_written_description, e.created_at::text as created_at`;
 
@@ -78,7 +78,7 @@ export function createPgliteBankStore(db: TestDatabase): BankStore {
     );
     const accountIds = links.map((link) => link.account_id).filter((id): id is string => id !== null);
     const accounts = accountIds.length
-      ? await run<{ id: string; currency: string }>(`select id, currency from accounts where organization_id = $1 and id in (select value::uuid from jsonb_array_elements_text($2::jsonb))`, [organizationId, JSON.stringify(accountIds)])
+      ? await run<{ id: string; currency: string; kind: string }>(`select id, currency, kind from accounts where organization_id = $1 and id in (select value::uuid from jsonb_array_elements_text($2::jsonb))`, [organizationId, JSON.stringify(accountIds)])
       : [];
     const ledgerIds = externals.map((e) => e.ledger_transaction_id).filter((id): id is string => id !== null);
     const ledger = ledgerIds.length
@@ -233,6 +233,44 @@ export function createPgliteBankStore(db: TestDatabase): BankStore {
         [organizationId, query.accountId, query.kind, query.amountMinor, query.currency, query.dateFrom, query.dateTo],
       );
       return rows.map(toManualCandidate);
+    },
+    async transferCandidates(organizationId, externalId) {
+      const rows = await run<Record<string, unknown>>(
+        `select id, organization_id, linked_account_id, account_id, account_kind, direction, amount_minor, currency,
+                transaction_date::text as transaction_date, status, category_hint, reconciliation_state,
+                ledger_transaction_id, transfer_counterpart_id, importable, revision
+           from bank_transfer_candidates($1, $2)`,
+        [organizationId, externalId],
+      );
+      return rows.map((row) => ({
+        id: String(row.id),
+        organizationId: String(row.organization_id),
+        linkedAccountId: String(row.linked_account_id),
+        accountId: row.account_id ? String(row.account_id) : null,
+        accountKind: (row.account_kind ?? null) as never,
+        direction: row.direction as "DEBIT" | "CREDIT",
+        amountMinor: row.amount_minor === null ? null : Number(row.amount_minor),
+        currency: String(row.currency),
+        transactionDate: String(row.transaction_date).slice(0, 10),
+        status: row.status as never,
+        categoryHint: row.category_hint ? String(row.category_hint) : null,
+        reconciliationState: row.reconciliation_state as never,
+        ledgerTransactionId: row.ledger_transaction_id ? String(row.ledger_transaction_id) : null,
+        transferCounterpartId: row.transfer_counterpart_id ? String(row.transfer_counterpart_id) : null,
+        importable: row.importable === true,
+        revision: Number(row.revision),
+      }));
+    },
+    async pairInternalTransfer(input) {
+      return (await value(`select bank_pair_internal_transfer($1, $2, $3, $4, $5, $6, $7)`, [
+        input.organizationId,
+        input.sourceExternalId,
+        input.counterpartExternalId,
+        input.expectedSourceRevision,
+        input.expectedCounterpartRevision,
+        input.runId,
+        input.actorId,
+      ])) as never;
     },
     async reconcile(input) {
       return (await value(`select bank_reconcile_transaction($1, $2, $3, $4::jsonb, $5, $6, $7)`, [

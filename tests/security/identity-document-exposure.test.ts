@@ -340,28 +340,38 @@ describe("every document path into the model, not just the explain tool", () => 
   });
 });
 
-describe("the reader entitlement is enforced on the server, not only in the page", () => {
+describe("paid OCR is gated on the server, and free local reading is not", () => {
   const actions = read("src/server/documents/intelligence-actions.ts");
+  const processing = read("src/server/documents/processing.ts");
 
-  it("checks the plan before any provider call", () => {
-    expect(actions).toContain("readerAccess");
+  it("decides the plan question once, before anything is processed", () => {
+    expect(actions).toContain("allowsPaidOcr");
     expect(actions).toContain("entitlementsFor");
-    // Order matters: the gate must precede the call that costs money.
-    expect(actions.indexOf("readerAccess(client")).toBeLessThan(actions.indexOf("processDocument("));
+    expect(actions.indexOf("allowsPaidOcr(client")).toBeLessThan(actions.indexOf("processDocument("));
   });
 
-  it("separates 'this deployment has no reader' from 'your plan does not include it'", () => {
-    // Conflating them would tell a Free workspace to upgrade for something
-    // the deployment cannot do at all.
-    expect(actions).toContain("textractConfigured()");
-    expect(actions).toMatch(/Premium and Business/);
+  it("gates the BILLED call rather than the whole action", () => {
+    // The regression this replaced: gating the action meant a Free workspace
+    // lost digital-PDF reading, which is local and costs nothing.
+    expect(actions).toContain("allowPaidOcr");
+    expect(processing).toContain("allowsPaidOcr(deps)");
+    expect(processing).toMatch(/provider\.method === "OCR" && !allowsPaidOcr\(deps\)/);
+  });
+
+  it("closes all three places a billed call can start", () => {
+    // resolve-time (an image), the scanned-PDF fallback, and the structured pass.
+    expect(processing.match(/allowsPaidOcr\(deps\)/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not tell anyone to upgrade when no paid reader exists at all", () => {
+    expect(actions).toMatch(/if \(!textractConfigured\(\)\) return true;/);
   });
 
   it("still authenticates, authorizes and rate limits first", () => {
     for (const guard of ["requireOrgMembership", 'can(membership.role, "financial:write")', "enforceRateLimit"]) {
       expect(actions, guard).toContain(guard);
     }
-    expect(actions.indexOf("enforceRateLimit")).toBeLessThan(actions.indexOf("readerAccess(client"));
+    expect(actions.indexOf("enforceRateLimit")).toBeLessThan(actions.indexOf("allowsPaidOcr(client"));
   });
 });
 

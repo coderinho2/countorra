@@ -289,3 +289,144 @@ describe("observability", () => {
     expect(serialized).not.toMatch(/85,000|8500000|123-45-6789|Example Test Employer|Wage and Tax Statement|secret-path|\.pdf/);
   });
 });
+
+// ── Paid OCR and the plan ───────────────────────────────────────────────
+
+/**
+ * A counting OCR reader, so a test can assert that AWS was NOT called rather
+ * than only that the outcome looked right.
+ */
+function countingOcr(lines: string[]) {
+  const calls = { text: 0, structured: 0 };
+  const provider: TextExtractionProvider & { calls: typeof calls; structuredKinds(): readonly string[]; extractStructured(): Promise<unknown> } = {
+    id: "amazon-textract",
+    version: "2026.1",
+    method: "OCR",
+    calls,
+    supports: (mime) => mime === "application/pdf" || mime === "image/png" || mime === "image/jpeg",
+    extractText: async () => {
+      calls.text += 1;
+      return {
+        provider: "amazon-textract",
+        providerVersion: "2026.1",
+        method: "OCR",
+        pageCount: 1,
+        pages: [{ pageNumber: 1, lines: lines.map((text) => ({ text, position: null, confidence: 0.99 })) }],
+        warnings: [],
+      };
+    },
+    structuredKinds: () => ["EXPENSE", "IDENTITY"],
+    extractStructured: async () => {
+      calls.structured += 1;
+      return { summaryFields: [], lineItems: [] };
+    },
+  };
+  return provider;
+}
+
+/** A byte-valid PNG header. The signature check runs before any reader, so
+ *  an image test needs real image bytes, not a PDF wearing a PNG label. */
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array.from({ length: 64 }, () => 0)]);
+const downloadPng = () => vi.fn(async () => ({ ok: true as const, bytes: PNG_BYTES }));
+
+const RECEIPT_LINES = ["NORTHWIND COFFEE", "Receipt", "Subtotal 20.00", "Tax 1.60", "Total 21.60", "Visa", "Thank you"];
+
+describe("paid OCR is gated by the plan, free local reading is not", () => {
+  it("reads a digital PDF on a Free plan, with no provider call at all", async () => {
+    const ocr = countingOcr([]);
+    const outcome = await run({ providers: [pdfReader, ocr], allowPaidOcr: false });
+
+    // The regression this exists for: a text-layer PDF is local and free, and
+    // must keep working on every plan once Textract is configured.
+    expect(outcome.kind).toBe("completed");
+    if (outcome.kind === "completed") expect(outcome.documentType).toBe("W2");
+    expect(ocr.calls.text).toBe(0);
+    expect(ocr.calls.structured).toBe(0);
+  });
+
+  it("refuses an image on a Free plan before any byte is sent", async () => {
+    state.document = { ...state.document, mimeType: "image/png" };
+    const ocr = countingOcr(RECEIPT_LINES);
+    const outcome = await run({ providers: [pdfReader, ocr], allowPaidOcr: false, download: downloadPng() });
+
+    expect(outcome.kind).toBe("not_entitled");
+    expect(ocr.calls.text).toBe(0);
+    // No job is created either: an unentitled request leaves no state behind.
+    expect(state.jobs).toEqual([]);
+  });
+
+  it("does NOT fall back to OCR for a scanned PDF on a Free plan", async () => {
+    // The subtle path: a scan resolves to the free reader, finds nothing, and
+    // would otherwise fall through to a billed call.
+    const empty: TextExtractionProvider = {
+      id: pdfReader.id,
+      version: pdfReader.version,
+      method: "PDF_TEXT_LAYER",
+      supports: (mime) => mime === "application/pdf",
+      extractText: async () => ({ provider: pdfReader.id, providerVersion: pdfReader.version, method: "PDF_TEXT_LAYER", pageCount: 1, pages: [], warnings: ["NO_TEXT_LAYER"] }),
+    };
+    const ocr = countingOcr(RECEIPT_LINES);
+    const outcome = await run({ providers: [empty, ocr], allowPaidOcr: false });
+
+    expect(ocr.calls.text).toBe(0);
+    // Honest about the result rather than pretending it was read.
+    expect(outcome.kind).toBe("completed");
+    if (outcome.kind === "completed") expect(outcome.status).toBe("UNSUPPORTED");
+  });
+
+  it("uses OCR for an image on a paid plan", async () => {
+    state.document = { ...state.document, mimeType: "image/png" };
+    const ocr = countingOcr(RECEIPT_LINES);
+    const outcome = await run({ providers: [pdfReader, ocr], allowPaidOcr: true, download: downloadPng() });
+
+    expect(outcome.kind).toBe("completed");
+    expect(ocr.calls.text).toBe(1);
+  });
+
+  it("falls back to OCR for a scanned PDF on a paid plan", async () => {
+    const empty: TextExtractionProvider = {
+      id: pdfReader.id,
+      version: pdfReader.version,
+      method: "PDF_TEXT_LAYER",
+      supports: (mime) => mime === "application/pdf",
+      extractText: async () => ({ provider: pdfReader.id, providerVersion: pdfReader.version, method: "PDF_TEXT_LAYER", pageCount: 1, pages: [], warnings: ["NO_TEXT_LAYER"] }),
+    };
+    const ocr = countingOcr(RECEIPT_LINES);
+    await run({ providers: [empty, ocr], allowPaidOcr: true });
+    expect(ocr.calls.text).toBe(1);
+  });
+
+  it("skips the billed structured pass on a Free plan even when the class earns one", async () => {
+    // A receipt read for free somehow (a digital PDF receipt) must not then
+    // trigger AnalyzeExpense, which is billed.
+    state.document = { ...state.document, mimeType: "application/pdf" };
+    const receiptTextLayer: TextExtractionProvider = {
+      id: pdfReader.id,
+      version: pdfReader.version,
+      method: "PDF_TEXT_LAYER",
+      supports: (mime) => mime === "application/pdf",
+      extractText: async () => ({
+        provider: pdfReader.id,
+        providerVersion: pdfReader.version,
+        method: "PDF_TEXT_LAYER",
+        pageCount: 1,
+        pages: [{ pageNumber: 1, lines: RECEIPT_LINES.map((text) => ({ text, position: null, confidence: null })) }],
+        warnings: [],
+      }),
+    };
+    const ocr = countingOcr(RECEIPT_LINES);
+    const outcome = await run({ providers: [receiptTextLayer, ocr], allowPaidOcr: false });
+
+    expect(outcome.kind).toBe("completed");
+    expect(ocr.calls.structured).toBe(0);
+  });
+
+  it("defaults to allowing paid OCR, so every existing caller is unchanged", async () => {
+    state.document = { ...state.document, mimeType: "image/png" };
+    const ocr = countingOcr(RECEIPT_LINES);
+    // `allowPaidOcr` omitted entirely.
+    const outcome = await run({ providers: [pdfReader, ocr], download: downloadPng() });
+    expect(outcome.kind).toBe("completed");
+    expect(ocr.calls.text).toBe(1);
+  });
+});

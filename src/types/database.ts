@@ -2445,6 +2445,41 @@ export type Database = {
         };
         Returns: { id: string; account_id: string; kind: TransactionKind; amount_minor: number; currency: string; occurred_on: string; source: string }[];
       };
+      /** 0057. Scoped, filtered candidates for the other leg of a transfer. */
+      bank_transfer_candidates: {
+        Args: { p_organization_id: string; p_external_id: string };
+        Returns: {
+          id: string;
+          organization_id: string;
+          linked_account_id: string;
+          account_id: string | null;
+          account_kind: string | null;
+          direction: "DEBIT" | "CREDIT";
+          amount_minor: number | null;
+          currency: string;
+          transaction_date: string;
+          status: string;
+          category_hint: string | null;
+          reconciliation_state: string;
+          ledger_transaction_id: string | null;
+          transfer_counterpart_id: string | null;
+          importable: boolean;
+          revision: number;
+        }[];
+      };
+      /** 0057. Pairs two legs into one transfer row, validating in the database. */
+      bank_pair_internal_transfer: {
+        Args: {
+          p_organization_id: string;
+          p_source_external_id: string;
+          p_counterpart_external_id: string;
+          p_expected_source_revision: number;
+          p_expected_counterpart_revision: number;
+          p_run_id: string | null;
+          p_actor: string | null;
+        };
+        Returns: string;
+      };
       bank_reconcile_transaction: {
         Args: {
           p_organization_id: string;

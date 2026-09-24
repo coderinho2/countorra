@@ -276,6 +276,6 @@ describe("the schema version is reported", () => {
         await query("reset role");
       }
     });
-    expect(version).toBe("0056");
+    expect(version).toBe("0057");
   });
 });

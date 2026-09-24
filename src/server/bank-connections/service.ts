@@ -349,7 +349,7 @@ export async function releaseOrganizationBankCredentials(
 export type LinkAccountResult = { kind: "applied"; reconciled: number } | { kind: "refused"; reason: Exclude<LinkOutcome, "APPLIED"> };
 
 export async function linkExternalAccount(
-  deps: Pick<ServiceDependencies, "store">,
+  deps: Pick<ServiceDependencies, "store" | "now">,
   input: { organizationId: string; linkedAccountId: string; accountId: string | null; importMode: "IMPORT" | "IGNORE"; actorId: string },
 ): Promise<LinkAccountResult> {
   const linked = await deps.store.getLinkedAccount(input.organizationId, input.linkedAccountId);
@@ -384,7 +384,7 @@ export async function linkExternalAccount(
  * takes (bank_import_linked_account, 0054).
  */
 export async function importExternalAccountAsNew(
-  deps: Pick<ServiceDependencies, "store">,
+  deps: Pick<ServiceDependencies, "store" | "now">,
   input: { organizationId: string; linkedAccountId: string; actorId: string },
 ): Promise<LinkAccountResult> {
   const linked = await deps.store.getLinkedAccount(input.organizationId, input.linkedAccountId);
@@ -400,7 +400,7 @@ export async function importExternalAccountAsNew(
 export type ResolveReviewResult = { kind: "applied" } | { kind: "refused"; reason: "NOT_FOUND" | "NOT_UNDER_REVIEW" | "NOT_APPLICABLE" | "UNSUPPORTED_CURRENCY" | "NOT_A_CANDIDATE" | Exclude<ReconcileOutcome, "APPLIED"> };
 
 export async function resolveBankReview(
-  deps: Pick<ServiceDependencies, "store">,
+  deps: Pick<ServiceDependencies, "store" | "now">,
   input: { organizationId: string; externalId: string; resolution: ReviewResolution; actorId: string },
 ): Promise<ResolveReviewResult> {
   const row = await deps.store.getReconciliationRow(input.organizationId, input.externalId);

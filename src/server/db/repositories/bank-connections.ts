@@ -48,7 +48,7 @@ const CONNECTION_COLUMNS =
 const JOB_COLUMNS = "id, organization_id, connection_id, status, trigger, attempts, max_attempts, next_attempt_at, lease_expires_at";
 
 const RECONCILIATION_COLUMNS =
-  "id, connection_id, linked_account_id, revision, status, direction, amount_minor, currency, transaction_date, merchant_name, description, reconciliation_state, review_reason, review_resolved_revision, ledger_transaction_id, ledger_link_kind, ledger_linked_at, ledger_written_account_id, ledger_written_kind, ledger_written_amount_minor, ledger_written_currency, ledger_written_occurred_on, ledger_written_description, created_at";
+  "id, connection_id, linked_account_id, revision, status, direction, amount_minor, currency, transaction_date, merchant_name, description, category_hint, transfer_counterpart_id, reconciliation_state, review_reason, review_resolved_revision, ledger_transaction_id, ledger_link_kind, ledger_linked_at, ledger_written_account_id, ledger_written_kind, ledger_written_amount_minor, ledger_written_currency, ledger_written_occurred_on, ledger_written_description, created_at";
 
 type ConnectionSelect = Pick<
   BankConnectionRow,
@@ -98,9 +98,9 @@ export function createSupabaseBankStore(admin: Client): BankStore {
     const linkById = new Map((links.data as LinkedAccountDbRow[]).map((link) => [link.id, link]));
 
     const accountIds = [...new Set((links.data as LinkedAccountDbRow[]).map((link) => link.account_id).filter((id): id is string => id !== null))];
-    const accountById = new Map<string, { id: string; currency: string }>();
+    const accountById = new Map<string, { id: string; currency: string; kind?: string | null }>();
     if (accountIds.length > 0) {
-      const accounts = await admin.from("accounts").select("id, currency").eq("organization_id", organizationId).in("id", accountIds);
+      const accounts = await admin.from("accounts").select("id, currency, kind").eq("organization_id", organizationId).in("id", accountIds);
       if (accounts.error) throw accounts.error;
       for (const account of accounts.data) accountById.set(account.id, account);
     }
@@ -340,6 +340,43 @@ export function createSupabaseBankStore(admin: Client): BankStore {
       });
       if (error) throw error;
       return (data ?? []).map(toManualCandidate);
+    },
+
+    async transferCandidates(organizationId, externalId) {
+      const { data, error } = await admin.rpc("bank_transfer_candidates", { p_organization_id: organizationId, p_external_id: externalId });
+      if (error) throw error;
+      return (data ?? []).map((row: Record<string, unknown>) => ({
+        id: String(row.id),
+        organizationId: String(row.organization_id),
+        linkedAccountId: String(row.linked_account_id),
+        accountId: row.account_id ? String(row.account_id) : null,
+        accountKind: (row.account_kind ?? null) as never,
+        direction: row.direction as "DEBIT" | "CREDIT",
+        amountMinor: row.amount_minor === null ? null : Number(row.amount_minor),
+        currency: String(row.currency),
+        transactionDate: String(row.transaction_date).slice(0, 10),
+        status: row.status as never,
+        categoryHint: row.category_hint ? String(row.category_hint) : null,
+        reconciliationState: row.reconciliation_state as never,
+        ledgerTransactionId: row.ledger_transaction_id ? String(row.ledger_transaction_id) : null,
+        transferCounterpartId: row.transfer_counterpart_id ? String(row.transfer_counterpart_id) : null,
+        importable: row.importable === true,
+        revision: Number(row.revision),
+      }));
+    },
+
+    async pairInternalTransfer(input) {
+      const { data, error } = await admin.rpc("bank_pair_internal_transfer", {
+        p_organization_id: input.organizationId,
+        p_source_external_id: input.sourceExternalId,
+        p_counterpart_external_id: input.counterpartExternalId,
+        p_expected_source_revision: input.expectedSourceRevision,
+        p_expected_counterpart_revision: input.expectedCounterpartRevision,
+        p_run_id: input.runId,
+        p_actor: input.actorId,
+      });
+      if (error) throw error;
+      return String(data) as never;
     },
 
     async reconcile(input) {

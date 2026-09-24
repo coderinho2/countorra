@@ -52,6 +52,19 @@ export interface ProcessingDependencies {
   download: (client: Client, storagePath: string, maxBytes: number) => Promise<DownloadResult>;
   /** Defaults to PROVIDER_TIMEOUT_MS. */
   providerTimeoutMs?: number;
+  /**
+   * Whether this workspace may reach a BILLED reader.
+   *
+   * Not "may this workspace read documents" — that gate belongs to nothing,
+   * because reading the text layer of a digital PDF is local, free and has
+   * always been available to everyone. This governs the calls that cost
+   * money: OCR on a photo or a scan, and the purpose-built expense/identity
+   * operations that follow one.
+   *
+   * Defaults to true so that every existing caller and test keeps its
+   * behaviour; the one caller that knows about plans passes it explicitly.
+   */
+  allowPaidOcr?: boolean;
 }
 
 export type DownloadResult = { ok: true; bytes: Uint8Array } | { ok: false; reason: "missing" | "too_large" };
@@ -59,6 +72,9 @@ export type DownloadResult = { ok: true; bytes: Uint8Array } | { ok: false; reas
 export type ProcessOutcome =
   | { kind: "unavailable"; message: string }
   | { kind: "not_configured"; message: string }
+  /** A reader exists, but reading THIS file would need a paid one. The
+   *  document is stored and unchanged; nothing was sent anywhere. */
+  | { kind: "not_entitled"; message: string }
   | { kind: "in_progress"; jobId: string }
   | { kind: "already_processed"; jobId: string; status: ProcessingJobStatus }
   | { kind: "attempts_exhausted"; jobId: string; message: string }
@@ -69,6 +85,14 @@ export type ProcessOutcome =
 
 const VERIFIED_TYPES: readonly string[] = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
 
+/** Said the same way wherever a paid read is refused, so the reason never
+ *  depends on which of the three gates happened to catch it first. */
+export const PAID_OCR_REQUIRED = "Reading scans and photos needs text recognition, which is part of Premium and Business. A PDF with selectable text is read on every plan.";
+
+function allowsPaidOcr(deps: Pick<ProcessingDependencies, "allowPaidOcr">): boolean {
+  return deps.allowPaidOcr !== false;
+}
+
 export async function processDocument(deps: ProcessingDependencies, input: { organizationId: string; documentId: string; userId: string }): Promise<ProcessOutcome> {
   const document = await getVisibleDocument(deps.client, input.documentId);
   if (!document || document.organizationId !== input.organizationId || !isKeyOwnedBy(document.storagePath, input.organizationId) || !VERIFIED_TYPES.includes(document.mimeType ?? "")) {
@@ -78,6 +102,11 @@ export async function processDocument(deps: ProcessingDependencies, input: { org
   const availability = resolveProvider(document.mimeType as VerifiedMimeType, deps.providers);
   if (!availability.available) return { kind: "not_configured", message: availability.message };
   const { provider } = availability;
+
+  // A photo or a scan resolves straight to the paid reader. Refused here,
+  // before a job is created and before a single byte leaves the server: an
+  // unentitled request must cost nothing at the provider.
+  if (provider.method === "OCR" && !allowsPaidOcr(deps)) return { kind: "not_entitled", message: PAID_OCR_REQUIRED };
   const identity = currentIdentity(document.id, provider);
 
   // Bounded: at most two decisions, the second after losing a race.
@@ -136,7 +165,16 @@ export async function processDocument(deps: ProcessingDependencies, input: { org
   return { kind: "unavailable", message: "This document is being read by another request. Try again in a moment." };
 }
 
-/** A future scheduler's entry point: run a QUEUED job by id, with no user. */
+/**
+ * A future scheduler's entry point: run a QUEUED job by id, with no user.
+ *
+ * NOTE FOR WHOEVER WIRES A SCHEDULER. `allowPaidOcr` defaults to true, which
+ * is right for the caller that already checked a plan and wrong for one that
+ * has not. A background runner acts on behalf of a workspace without a
+ * request to carry its entitlement, so it must read the subscription itself
+ * and pass the answer — otherwise queued work becomes a way to get billed OCR
+ * on a plan that does not include it.
+ */
 export async function runQueuedJob(deps: Omit<ProcessingDependencies, "client"> & { client?: Client }, job: ProcessingJob): Promise<ProcessOutcome> {
   const reader = deps.client ?? deps.admin;
   const document = await getVisibleDocument(reader, job.documentId);
@@ -187,7 +225,11 @@ async function runClaimed(deps: ProcessingDependencies, queued: ProcessingJob, d
   // document is recorded as unreadable. Only when the first reader found
   // nothing at all — a digital PDF is never re-read, and never re-billed.
   let readProvider = provider;
-  const ocr = ocrProvider(deps.providers);
+  // THE SUBTLE ONE. A scanned PDF resolves to the free local reader, finds no
+  // text layer, and would fall back to OCR. That fallback is a billed call,
+  // so an unentitled workspace must not take it — the free read still ran and
+  // its (empty) result is recorded honestly as "nothing could be read".
+  const ocr = allowsPaidOcr(deps) ? ocrProvider(deps.providers) : null;
   if (ocr && ocr.id !== provider.id && ocr.supports(mimeType) && outcome.result.pages.every((page) => page.lines.length === 0)) {
     const rescan = await runProvider(ocr, { bytes: download.bytes, mimeType }, deps.providerTimeoutMs);
     if (rescan.ok && rescan.result.pages.some((page) => page.lines.length > 0)) {
@@ -203,7 +245,7 @@ async function runClaimed(deps: ProcessingDependencies, queued: ProcessingJob, d
   // class must have an operation, and the classification must be good enough
   // to be worth paying for (`shouldRunStructured`).
   const kind = structuredKindFor(draft.classification.documentType);
-  if (kind && shouldRunStructured(draft) && supportsStructured(readProvider, kind)) {
+  if (kind && allowsPaidOcr(deps) && shouldRunStructured(draft) && supportsStructured(readProvider, kind)) {
     const structured = await runStructured(readProvider, { bytes: download.bytes, mimeType, kind }, deps.providerTimeoutMs);
     if (structured.ok) {
       const applied = applyStructured(draft, kind, structured.payload);

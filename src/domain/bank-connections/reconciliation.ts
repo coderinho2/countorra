@@ -60,6 +60,12 @@ export interface LedgerFields {
   description: string | null;
 }
 
+/** `LedgerFields` as the sync may have WRITTEN them, which includes a
+ *  transfer produced by internal-transfer pairing. */
+export interface WrittenLedgerFields extends Omit<LedgerFields, "kind"> {
+  kind: LedgerKind | "transfer";
+}
+
 export interface ExternalForReconciliation {
   id: string;
   revision: number;
@@ -77,8 +83,16 @@ export interface ExternalForReconciliation {
   ledgerTransactionId: string | null;
   ledgerLinkKind: "IMPORTED" | "MATCHED" | null;
   ledgerLinkedAt: string | null;
-  /** Provider values last applied to, or acknowledged against, the ledger. */
-  written: LedgerFields | null;
+  /** Provider values last applied to, or acknowledged against, the ledger.
+   *  `kind` may be `transfer` here even though an IMPORT decision may not
+   *  produce one: a paired transfer (0057) records what it wrote so a later
+   *  provider change is still compared against the right row. */
+  written: WrittenLedgerFields | null;
+  /** The provider's own category label, used only as corroboration when
+   *  deciding whether two legs are one internal transfer (0057). */
+  categoryHint?: string | null;
+  /** Set once this transaction belongs to a transfer pair (0057). */
+  transferCounterpartId?: string | null;
 }
 
 export interface LinkedAccountForReconciliation {
@@ -91,6 +105,10 @@ export interface LinkedAccountForReconciliation {
 export interface CountorraAccountForReconciliation {
   id: string;
   currency: string;
+  /** `accounts.kind`. Read so that a credit-card account is always searched
+   *  for the other leg of a payment, whichever leg the sync reaches first
+   *  (0057). Optional so existing callers and fixtures are unaffected. */
+  kind?: string | null;
 }
 
 /** A ledger row as it is now. A person may have turned an import into a

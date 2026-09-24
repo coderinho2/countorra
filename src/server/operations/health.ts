@@ -5,6 +5,7 @@ import { serverEnv } from "@/lib/server-env";
 import { isBillingConfigured } from "@/server/billing/stripe-config";
 import { bankProviderConfigured } from "@/server/bank-connections/providers";
 import { emailConfig } from "@/server/email/config";
+import { textractConfigured } from "@/server/documents/textract/client";
 import { measureDependency, runtimeIdentity } from "@/lib/observability";
 
 /**
@@ -31,7 +32,7 @@ import { measureDependency, runtimeIdentity } from "@/lib/observability";
 
 /** The migration this build expects the database to have reached. Keep in
  *  step with `operations_schema_version()` in the latest migration. */
-export const EXPECTED_SCHEMA_VERSION = "0056";
+export const EXPECTED_SCHEMA_VERSION = "0057";
 
 const DATABASE_TIMEOUT_MS = 3_000;
 const CACHE_MS = 15_000;
@@ -47,7 +48,7 @@ export interface ReadinessReport {
     configuration: { ok: boolean; error: string | null };
   };
   /** Optional integrations: whether each is configured. Never a value. */
-  integrations: { stripe: boolean; plaid: boolean; email: boolean; bankWorkerCron: boolean; operationsToken: boolean };
+  integrations: { stripe: boolean; plaid: boolean; email: boolean; documentOcr: boolean; bankWorkerCron: boolean; operationsToken: boolean };
 }
 
 async function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
@@ -111,6 +112,12 @@ async function runReadiness(requestId: string): Promise<ReadinessReport> {
       stripe: safely(isBillingConfigured),
       plaid: safely(bankProviderConfigured),
       email: safely(() => emailConfig() !== null),
+      // Whether a paid document reader exists on this deployment. A boolean
+      // and nothing more: it says a region is configured, never which one and
+      // never a credential. Without it an operator turning OCR on has no way
+      // to confirm the environment took effect short of uploading a photo and
+      // watching what happens.
+      documentOcr: safely(textractConfigured),
       bankWorkerCron: Boolean(env?.BANK_SYNC_WORKER_SECRET && env?.CRON_SECRET),
       operationsToken: Boolean(env?.OPERATIONS_TOKEN),
     },

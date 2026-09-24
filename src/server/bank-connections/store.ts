@@ -1,3 +1,4 @@
+import type { TransferSide } from "@/domain/bank-connections/internal-transfers";
 import type { NormalizedPage } from "@/domain/bank-connections/normalization";
 import type { SyncJobSnapshot } from "@/domain/bank-connections/sync-job";
 import type { WorkerQueueHealth } from "@/domain/bank-connections/worker";
@@ -9,6 +10,7 @@ import type {
   ManualCandidate,
   ReconciliationDecision,
   ReconciliationInput,
+  WrittenLedgerFields,
 } from "@/domain/bank-connections/reconciliation";
 import type {
   ConnectionStatus,
@@ -93,6 +95,12 @@ export interface ReconciliationRow extends Omit<ReconciliationInput, "candidates
   linkedAccountId: string;
   createdAt: string;
 }
+
+/** A candidate other leg, as `bank_transfer_candidates` returns it. It is a
+ *  `TransferSide` plus the revision the pairing call has to present. */
+export type TransferCandidate = TransferSide & { revision: number };
+
+export type TransferPairOutcome = "APPLIED" | "NOT_FOUND" | "STALE" | "INVALID" | "LEDGER_EDITED";
 
 /** Keyset position in a walk over changed rows. By id alone: rows written by
  *  one page share a `created_at`, so time cannot order them. */
@@ -180,6 +188,25 @@ export interface BankStore {
   listToReconcile(organizationId: string, connectionId: string, limit: number, after: ReconcileCursor | null): Promise<ReconciliationRow[]>;
   getReconciliationRow(organizationId: string, externalId: string): Promise<ReconciliationRow | null>;
   matchCandidates(organizationId: string, query: CandidateQuery): Promise<ManualCandidate[]>;
+  /**
+   * Possible other legs of an internal transfer for this transaction.
+   *
+   * Scoped, filtered and bounded in SQL (bank_transfer_candidates, 0057), so
+   * the organization boundary is not something this layer has to remember.
+   * Whether any of them IS the other leg is decided by
+   * `matchInternalTransfer`, which re-checks every rule anyway.
+   */
+  transferCandidates(organizationId: string, externalId: string): Promise<TransferCandidate[]>;
+  /** Pairs two legs into one transfer row. All validation is in the database. */
+  pairInternalTransfer(input: {
+    organizationId: string;
+    sourceExternalId: string;
+    counterpartExternalId: string;
+    expectedSourceRevision: number;
+    expectedCounterpartRevision: number;
+    runId: string | null;
+    actorId: string | null;
+  }): Promise<TransferPairOutcome>;
   reconcile(input: { organizationId: string; externalId: string; expectedRevision: number; decision: ReconciliationDecision; acknowledged: LedgerFields | null; runId: string | null; actorId: string | null; resolution: boolean }): Promise<ReconcileOutcome>;
 
   transitionConnection(input: { organizationId: string; connectionId: string; expectedStatus: ConnectionStatus; to: ConnectionStatus; reason: ConnectionStatusReason; eventAt: string | null }): Promise<TransitionOutcome>;
@@ -289,6 +316,8 @@ export interface ExternalDbRow {
   transaction_date: string;
   merchant_name: string | null;
   description: string | null;
+  category_hint: string | null;
+  transfer_counterpart_id: string | null;
   reconciliation_state: ReconciliationState;
   review_reason: ReviewReason | null;
   review_resolved_revision: number | null;
@@ -296,7 +325,7 @@ export interface ExternalDbRow {
   ledger_link_kind: "IMPORTED" | "MATCHED" | null;
   ledger_linked_at: string | null;
   ledger_written_account_id: string | null;
-  ledger_written_kind: "income" | "expense" | null;
+  ledger_written_kind: "income" | "expense" | "transfer" | null;
   ledger_written_amount_minor: number | string | null;
   ledger_written_currency: string | null;
   ledger_written_occurred_on: string | null;
@@ -326,8 +355,8 @@ export interface LedgerDbRow {
 const asNumber = (value: number | string | null): number | null => (value === null ? null : Number(value));
 const asDate = (value: string | null): string | null => (value === null ? null : String(value).slice(0, 10));
 
-export function toReconciliationRow(external: ExternalDbRow, link: LinkedAccountDbRow, account: { id: string; currency: string } | null, ledger: LedgerDbRow | null): ReconciliationRow {
-  const written: LedgerFields | null =
+export function toReconciliationRow(external: ExternalDbRow, link: LinkedAccountDbRow, account: { id: string; currency: string; kind?: string | null } | null, ledger: LedgerDbRow | null): ReconciliationRow {
+  const written: WrittenLedgerFields | null =
     external.ledger_written_account_id && external.ledger_written_kind && external.ledger_written_amount_minor !== null && external.ledger_written_currency && external.ledger_written_occurred_on
       ? {
           accountId: external.ledger_written_account_id,
@@ -355,6 +384,8 @@ export function toReconciliationRow(external: ExternalDbRow, link: LinkedAccount
     ledgerTransactionId: external.ledger_transaction_id,
     ledgerLinkKind: external.ledger_link_kind,
     ledgerLinkedAt: external.ledger_linked_at,
+    categoryHint: external.category_hint ?? null,
+    transferCounterpartId: external.transfer_counterpart_id ?? null,
     written,
   };
 
@@ -377,7 +408,7 @@ export function toReconciliationRow(external: ExternalDbRow, link: LinkedAccount
     createdAt: external.created_at,
     external: reconciliationExternal,
     linkedAccount: { importMode: link.import_mode, accountId: link.account_id, currency: link.currency ? link.currency.trim() : null, detached: link.detached_at !== null },
-    account: account ? { id: account.id, currency: account.currency.trim() } : null,
+    account: account ? { id: account.id, currency: account.currency.trim(), kind: account.kind ?? null } : null,
     ledger: ledgerRow,
   };
 }

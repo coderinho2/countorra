@@ -2,10 +2,11 @@ import { failureCountsAgainstConnection, nextConnectionStatus, type ConnectionEv
 import { normalizeTransactionsPage } from "@/domain/bank-connections/normalization";
 import { MAX_PAGE_SIZE, providerTransactionsPageSchema, resolveBankProvider, runBankProviderCall, type BankConnectionProvider, type ProviderSecretStore } from "@/domain/bank-connections/provider";
 import { decideReconciliation } from "@/domain/bank-connections/reconciliation";
+import { matchInternalTransfer, withinRetroCorrectionWindow, worthSearchingForCounterpart, type TransferSide } from "@/domain/bank-connections/internal-transfers";
 import { MAX_PAGES_PER_RUN, MAX_RECONCILED_PER_RUN, RECONCILE_BATCH_SIZE, SYNC_LEASE_SECONDS, decideSyncFailure, jobRunnability, syncIdempotencyKey } from "@/domain/bank-connections/sync-job";
 import type { SyncFailureCategory } from "@/domain/bank-connections/types";
 import { reportError, reportEvent } from "@/lib/observability";
-import type { BankConnectionRecord, BankStore, ReconcileCursor } from "./store";
+import type { BankConnectionRecord, BankStore, ReconcileCursor, ReconciliationRow } from "./store";
 
 /**
  * THE SYNC ENGINE.
@@ -320,11 +321,13 @@ function addCounts(target: SyncCounts, source: Partial<SyncCounts>): void {
  * stays marked and is picked up by the next run.
  */
 export async function reconcileConnection(
-  deps: Pick<SyncDependencies, "store">,
+  deps: Pick<SyncDependencies, "store" | "now">,
   input: { organizationId: string; connectionId: string; runId: string | null; budget: { remaining: number } },
 ): Promise<Pick<SyncCounts, "imported" | "matched" | "updated" | "flagged" | "reconciled">> {
   const counts = { imported: 0, matched: 0, updated: 0, flagged: 0, reconciled: 0 };
   let after: ReconcileCursor | null = null;
+  /** Externals settled by a transfer pairing during this pass. */
+  const paired = new Set<string>();
 
   while (input.budget.remaining > 0) {
     const rows = await deps.store.listToReconcile(input.organizationId, input.connectionId, Math.min(RECONCILE_BATCH_SIZE, input.budget.remaining), after);
@@ -332,6 +335,24 @@ export async function reconcileConnection(
 
     for (const row of rows) {
       input.budget.remaining -= 1;
+
+      // Settled as part of a transfer earlier in this batch. The rows were
+      // read before that happened, so this one's snapshot still looks
+      // unreconciled — deciding from it would import a second ledger row for
+      // a movement already recorded.
+      if (paired.has(row.external.id)) continue;
+
+      // Internal transfers come first, because the answer changes what the
+      // ordinary path would do: left alone, the two legs of one movement
+      // become an expense and an income. Whichever leg is reached first
+      // claims the pair, so the common case never writes a phantom row at
+      // all.
+      const pairedIds = await pairTransferIfFound(deps, input, row, counts);
+      if (pairedIds) {
+        for (const id of pairedIds) paired.add(id);
+        continue;
+      }
+
       let decision = decideReconciliation({ ...row, candidates: null });
       if (decision.kind === "NEEDS_CANDIDATES") {
         const candidates = await deps.store.matchCandidates(input.organizationId, decision.query);
@@ -418,4 +439,115 @@ export async function applyConnectionEvent(
     metadata: { from: decision.from, to: decision.to, reason: decision.reason },
   });
   return "APPLIED";
+}
+
+/**
+ * Pairs this transaction with the other leg of an internal transfer, if there
+ * is one. Returns true when the row is settled and the ordinary
+ * reconciliation path should be skipped.
+ *
+ * WHERE THE JUDGEMENT LIVES. The store's query is scoped and filtered in SQL;
+ * `matchInternalTransfer` applies the conservative rules (corroboration,
+ * exactly one candidate) and re-checks everything anyway; and
+ * `bank_pair_internal_transfer` re-validates the lot a third time while
+ * holding both row locks. A wrong answer has to get past all three.
+ *
+ * ANY REFUSAL IS A NON-EVENT. If the candidate is ambiguous, uncorroborated,
+ * too old to correct, or the database refuses, this returns false and the
+ * transaction is reconciled exactly as it is today. The figures are then no
+ * worse than before, which is the trade this feature is built around.
+ */
+async function pairTransferIfFound(
+  deps: Pick<SyncDependencies, "store" | "now">,
+  input: { organizationId: string; runId: string | null },
+  row: ReconciliationRow,
+  counts: { reconciled: number },
+): Promise<readonly string[] | null> {
+  const external = row.external;
+  // Cheap gates first: most rows are not transfers and must not cost a query.
+  if (external.status !== "POSTED" || external.transferCounterpartId !== null || external.amountMinor === null) return null;
+  if (!row.account || row.linkedAccount.importMode !== "IMPORT" || row.linkedAccount.detached) return null;
+  // Before spending a query. Most transactions are purchases and will never
+  // be a transfer; searching for a counterpart for each one is what made a
+  // large backlog miss its time budget.
+  //
+  // A credit-card account is always searched, whatever the label, because a
+  // card payment is recognised by the ACCOUNTS rather than by a category —
+  // and gating that leg on its own label would make the outcome depend on
+  // which of the two the sync happened to reach first.
+  if (!worthSearchingForCounterpart(external.categoryHint ?? null) && row.account.kind !== "credit_card") return null;
+
+  const candidates = await deps.store.transferCandidates(input.organizationId, external.id);
+  if (candidates.length === 0) return null;
+
+  const accountKind = await deps.store.getAccountKind(input.organizationId, row.account.id);
+  const side: TransferSide = {
+    id: external.id,
+    organizationId: input.organizationId,
+    linkedAccountId: row.linkedAccountId,
+    accountId: row.account.id,
+    accountKind: (accountKind ?? null) as TransferSide["accountKind"],
+    direction: external.direction,
+    amountMinor: external.amountMinor,
+    currency: external.currency,
+    transactionDate: external.transactionDate,
+    status: external.status,
+    categoryHint: external.categoryHint ?? null,
+    reconciliationState: external.reconciliationState,
+    ledgerTransactionId: external.ledgerTransactionId,
+    transferCounterpartId: external.transferCounterpartId,
+    importable: true,
+  };
+
+  const match = matchInternalTransfer(side, candidates);
+  if (match.kind !== "PAIR") return null;
+
+  // Asked from the other side too. Without this the answer would depend on
+  // which leg the sync happened to reach first, and a three-way ambiguity
+  // would pair from one direction and refuse from the other.
+  const other = match.source.id === side.id ? match.counterpart : match.source;
+  const mirrored = matchInternalTransfer(other, await deps.store.transferCandidates(input.organizationId, other.id));
+  if (mirrored.kind !== "PAIR" || mirrored.source.id !== match.source.id || mirrored.counterpart.id !== match.counterpart.id) return null;
+
+  // A correction reaches back only so far: a transfer discovered months later
+  // must not restate a period somebody has already reviewed or exported.
+  const today = deps.now().toISOString().slice(0, 10);
+  if (match.retroCorrection && !withinRetroCorrectionWindow(match.source.transactionDate, today)) return null;
+
+  const revisionOf = (id: string): number | null =>
+    id === side.id ? external.revision : (candidates.find((candidate) => candidate.id === id)?.revision ?? null);
+
+  const sourceRevision = revisionOf(match.source.id);
+  const counterpartRevision = revisionOf(match.counterpart.id);
+  if (sourceRevision === null || counterpartRevision === null) return null;
+
+  const outcome = await deps.store.pairInternalTransfer({
+    organizationId: input.organizationId,
+    sourceExternalId: match.source.id,
+    counterpartExternalId: match.counterpart.id,
+    expectedSourceRevision: sourceRevision,
+    expectedCounterpartRevision: counterpartRevision,
+    runId: input.runId,
+    actorId: null,
+  });
+
+  if (outcome !== "APPLIED") {
+    // Including LEDGER_EDITED, where a person has changed the row the
+    // correction would have touched: their edit wins, exactly as everywhere
+    // else in reconciliation.
+    reportEvent(
+      "bank.transfer_pairing_refused",
+      { scope: "bank", organizationId: input.organizationId, detail: { externalId: external.id, outcome, corroboration: match.corroboration, retro: match.retroCorrection } },
+      "warning",
+    );
+    return null;
+  }
+
+  reportEvent("bank.transfer_paired", {
+    scope: "bank",
+    organizationId: input.organizationId,
+    detail: { sourceExternalId: match.source.id, corroboration: match.corroboration, retro: match.retroCorrection },
+  });
+  counts.reconciled += 1;
+  return [match.source.id, match.counterpart.id];
 }
