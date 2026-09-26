@@ -67,7 +67,12 @@ export class PlaidBankProvider implements BankConnectionProvider {
     try {
       raw = await operation();
     } catch (error) {
-      throw new BankProviderError(classifyPlaidFailure(error));
+      // The category decides what happens next; the code and request id say
+      // WHY, which several categories — INTERNAL_ERROR above all — cannot.
+      // Only these two facts travel: Plaid's message text can name an
+      // institution or an item and is never propagated.
+      const facts = extractPlaidError(error);
+      throw new BankProviderError(classifyPlaidFailure(error), { code: facts.errorCode, requestId: facts.requestId });
     }
     const parsed = schema.safeParse(raw);
     if (!parsed.success) throw new BankProviderError("MALFORMED_PROVIDER_RESPONSE");

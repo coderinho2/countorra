@@ -160,6 +160,37 @@ describe("completing a link", () => {
     expect(outcome).toMatchObject({ ok: false, category: "INTERNAL_ERROR" });
     expect(JSON.stringify(outcome)).not.toContain("Developer-facing sentence");
   });
+
+  it("carries Plaid's error code and request id, so INTERNAL_ERROR can be diagnosed", async () => {
+    /**
+     * A category is a DECISION, not a cause. Several unrelated mistakes all
+     * classify as INTERNAL_ERROR — this exact ambiguity cost a production
+     * debugging session where "Something went wrong on our side." was all the
+     * log said, and the real answer (a field Plaid rejected) was only visible
+     * in Plaid's own dashboard.
+     *
+     * The code is enum-like and the request id identifies the CALL, not the
+     * customer, so both are safe to keep. Plaid's message text is not, and
+     * still must not appear.
+     */
+    double.failNext({ errorCode: "INVALID_FIELD", errorType: "INVALID_REQUEST", operation: "exchange" });
+    const outcome = await completeLink();
+
+    expect(outcome).toMatchObject({ ok: false, category: "INTERNAL_ERROR" });
+    if (outcome.ok) throw new Error("expected a failure");
+    expect(outcome.diagnostics).toEqual({ code: "INVALID_FIELD", requestId: "req_double" });
+    // The sentence written for a developer can name an institution or an item.
+    expect(JSON.stringify(outcome)).not.toContain("Developer-facing sentence");
+  });
+
+  it("leaves the diagnostics empty rather than inventing them", async () => {
+    // A network fault has no body and no request id. The fields are absent,
+    // not filled with a guess.
+    double.failNext({ errorCode: null as unknown as string, errorType: undefined, operation: "exchange" });
+    const outcome = await completeLink();
+    if (outcome.ok) throw new Error("expected a failure");
+    expect(outcome.diagnostics?.code ?? null).toBeNull();
+  });
 });
 
 describe("transaction sync", () => {

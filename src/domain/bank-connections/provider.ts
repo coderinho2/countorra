@@ -258,16 +258,41 @@ export interface BankConnectionProvider {
 
 /** Thrown by an adapter to report a failure it understands. Only the category
  *  crosses the boundary. */
+/**
+ * Non-sensitive diagnostics a provider may attach to a failure.
+ *
+ * WHY THESE TWO AND NOTHING ELSE. A category says what Countorra will DO about
+ * a failure; it does not say what the provider objected to. When Plaid rejects
+ * a request as invalid, every possible cause collapses to INTERNAL_ERROR, and
+ * the log said only that — so "which field was wrong?" could not be answered
+ * from this deployment's own logs at all, only from the provider's dashboard.
+ *
+ * `code` is the provider's enum-like error code (`INVALID_FIELD`,
+ * `ITEM_LOGIN_REQUIRED`), and `requestId` identifies the CALL, not the
+ * customer — it is the id a provider's support asks for. Neither can carry an
+ * institution, an amount, a token or anything about a person, which is why
+ * these two are safe to log and the provider's message text is not.
+ */
+export interface ProviderFailureDiagnostics {
+  code?: string | null;
+  requestId?: string | null;
+}
+
 export class BankProviderError extends Error {
   readonly category: SyncFailureCategory;
-  constructor(category: SyncFailureCategory) {
+  /** Set by the adapter that knows the provider's error shape. */
+  readonly diagnostics: ProviderFailureDiagnostics;
+  constructor(category: SyncFailureCategory, diagnostics: ProviderFailureDiagnostics = {}) {
     super(`Bank provider call failed: ${category}`);
     this.name = "BankProviderError";
     this.category = category;
+    this.diagnostics = diagnostics;
   }
 }
 
-export type ProviderCallOutcome<T> = { ok: true; value: T; durationMs: number } | { ok: false; category: SyncFailureCategory; durationMs: number };
+export type ProviderCallOutcome<T> =
+  | { ok: true; value: T; durationMs: number }
+  | { ok: false; category: SyncFailureCategory; durationMs: number; diagnostics?: ProviderFailureDiagnostics };
 
 /**
  * Runs one provider call with a deadline and validates what came back.
@@ -282,12 +307,29 @@ export async function runBankProviderCall<T>(
   operation = "provider_call",
 ): Promise<ProviderCallOutcome<T>> {
   const outcome = await runTimedProviderCall(call, schema, timeoutMs);
-  // One record per provider call — operation, outcome, failure category and
-  // duration, and nothing else: the value, the token and the payload never
-  // reach it (src/lib/observability.ts redacts regardless).
+  // One record per provider call — operation, outcome, failure category,
+  // duration, and (on a failure the provider explained) its error code and
+  // request id. Nothing else: the value, the token and the payload never reach
+  // it, and src/lib/observability.ts redacts regardless.
+  //
+  // The two diagnostics matter because a category is a DECISION, not a cause.
+  // Several unrelated mistakes all classify as INTERNAL_ERROR, so without the
+  // code this event could say a call failed but never why, and the only place
+  // to find out was the provider's own dashboard.
   reportEvent(
     "dependency.call",
-    { scope: "bank", detail: { dependency: "bank_provider", operation, outcome: outcome.ok ? "ok" : "failed", errorCategory: outcome.ok ? null : outcome.category, durationMs: outcome.durationMs } },
+    {
+      scope: "bank",
+      detail: {
+        dependency: "bank_provider",
+        operation,
+        outcome: outcome.ok ? "ok" : "failed",
+        errorCategory: outcome.ok ? null : outcome.category,
+        providerErrorCode: outcome.ok ? null : (outcome.diagnostics?.code ?? null),
+        providerRequestId: outcome.ok ? null : (outcome.diagnostics?.requestId ?? null),
+        durationMs: outcome.durationMs,
+      },
+    },
     outcome.ok ? "info" : "warning",
   );
   return outcome;
@@ -311,7 +353,7 @@ async function runTimedProviderCall<T>(call: (signal: AbortSignal) => Promise<un
     if (!parsed.success) return { ok: false, category: "MALFORMED_PROVIDER_RESPONSE", durationMs: Date.now() - started };
     return { ok: true, value: parsed.data, durationMs: Date.now() - started };
   } catch (error) {
-    if (error instanceof BankProviderError) return { ok: false, category: error.category, durationMs: Date.now() - started };
+    if (error instanceof BankProviderError) return { ok: false, category: error.category, durationMs: Date.now() - started, diagnostics: error.diagnostics };
     if (controller.signal.aborted) return { ok: false, category: "PROVIDER_TIMEOUT", durationMs: Date.now() - started };
     return { ok: false, category: "PROVIDER_UNAVAILABLE", durationMs: Date.now() - started };
   } finally {
