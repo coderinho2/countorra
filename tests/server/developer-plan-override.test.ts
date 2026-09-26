@@ -27,6 +27,11 @@ const state = vi.hoisted(() => {
     subscription: null as { planId: string; status: string } | null,
     override: null as string | null,
     overrideReadFails: false,
+    /** Rows returned for the MULTI-organization lookup the allowance uses. */
+    overrideRows: [] as { plan_id: string }[],
+    overrideListFails: false,
+    /** Every id list the allowance lookup asked for, so "did it even ask?" is testable. */
+    overrideListQueries: [] as string[][],
   };
 });
 
@@ -49,11 +54,16 @@ const client = {
       eq: () => ({
         maybeSingle: async () => (state.overrideReadFails ? { data: null, error: new Error("relation does not exist") } : { data: state.override ? { plan_id: state.override } : null, error: null }),
       }),
+      /** The allowance asks for several organizations at once. */
+      in: async (_column: string, ids: string[]) => {
+        state.overrideListQueries.push([...ids]);
+        return state.overrideListFails ? { data: null, error: new Error("relation does not exist") } : { data: state.overrideRows, error: null };
+      },
     }),
   }),
 } as never;
 
-const { effectivePlan, isDeveloperSession, readPlanOverride } = await import("@/server/billing/developer-override");
+const { effectiveOrganizationAllowance, effectivePlan, isDeveloperSession, readPlanOverride } = await import("@/server/billing/developer-override");
 const { developerAccounts, isDeveloperAccount, planLabelWithSource, isDeveloperPlanTier } = await import("@/domain/billing/developer-override");
 
 const DEVELOPER = { email: "dev@example.test", email_confirmed_at: "2026-01-01T00:00:00.000Z" };
@@ -65,6 +75,9 @@ beforeEach(() => {
   state.subscription = { planId: "free", status: "active" };
   state.override = null;
   state.overrideReadFails = false;
+  state.overrideRows = [];
+  state.overrideListFails = false;
+  state.overrideListQueries = [];
 });
 
 describe("parsing the allowlist", () => {
@@ -272,5 +285,100 @@ describe("reading the row", () => {
   it("returns null rather than throwing when the table cannot be read", async () => {
     state.overrideReadFails = true;
     expect(await readPlanOverride(client, "org-1")).toBeNull();
+  });
+});
+
+describe("the workspace allowance, with a test plan counted", () => {
+  /**
+   * THE BUG THIS CLOSES. Every other gate asks about one workspace, so it
+   * resolves one workspace's plan through `effectivePlan`. The organization
+   * allowance is the exception: it is a fact about the PERSON, taken as the
+   * best allowance across every workspace they own, and asked while they are
+   * creating a workspace that does not exist yet.
+   *
+   * It was therefore the one enforcement point the override never reached. A
+   * developer testing as Business — which grants unlimited workspaces — was
+   * still held to Free's single workspace, because this path read subscription
+   * rows and nothing else.
+   */
+
+  const OWNED = ["org-1", "org-2"];
+  /** A Free subscription on each owned workspace: allowance 1. */
+  const freeEverywhere = [
+    { planId: "free", status: "active" },
+    { planId: "free", status: "active" },
+  ] as never;
+
+  it("gives a developer testing as Business an unlimited allowance", async () => {
+    state.overrideRows = [{ plan_id: "business" }];
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, DEVELOPER)).toBeNull();
+  });
+
+  it("gives a developer testing as Premium exactly Premium's allowance", async () => {
+    state.overrideRows = [{ plan_id: "premium" }];
+    // 3, from the same entitlements table a paying customer gets — an override
+    // cannot grant more than a purchasable plan grants.
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, DEVELOPER)).toBe(3);
+  });
+
+  it("IGNORES the rows for anybody who is not a developer", async () => {
+    // The escalation this must never allow: a row alone grants nothing.
+    state.overrideRows = [{ plan_id: "business" }];
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, ORDINARY)).toBe(1);
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, null)).toBe(1);
+  });
+
+  it("ignores the rows on a deployment with no developer list", async () => {
+    state.developerAccounts = undefined;
+    state.overrideRows = [{ plan_id: "business" }];
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, DEVELOPER)).toBe(1);
+  });
+
+  it("ignores the rows when the developer's email is unconfirmed", async () => {
+    state.overrideRows = [{ plan_id: "business" }];
+    const unconfirmed = { email: "dev@example.test", email_confirmed_at: null };
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, unconfirmed)).toBe(1);
+  });
+
+  it("never LOWERS the allowance a real subscription already gives", async () => {
+    // 'free' is a meaningful override elsewhere — it tests the restrictions
+    // without cancelling a subscription. It must not take away a workspace
+    // somebody has paid for, so the real plan still wins here.
+    state.overrideRows = [{ plan_id: "free" }];
+    const paidPremium = [{ planId: "premium", status: "active" }] as never;
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: paidPremium }, DEVELOPER)).toBe(3);
+  });
+
+  it("returns the billed allowance when no override row exists", async () => {
+    state.overrideRows = [];
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, DEVELOPER)).toBe(1);
+  });
+
+  it("does not query at all for somebody who owns nothing yet", async () => {
+    state.overrideRows = [{ plan_id: "business" }];
+    state.overrideListQueries = [];
+    // A first workspace is always allowed, and there is nothing to look up.
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: [], subscriptions: [] }, DEVELOPER)).toBe(1);
+    expect(state.overrideListQueries).toEqual([]);
+  });
+
+  it("asks only about the workspaces this person owns", async () => {
+    state.overrideRows = [{ plan_id: "business" }];
+    state.overrideListQueries = [];
+    await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, DEVELOPER);
+    expect(state.overrideListQueries).toEqual([OWNED]);
+  });
+
+  it("falls back to the billed allowance if the lookup fails", async () => {
+    // A deployment whose migration has not run yet must not turn a missing
+    // table into an error on the path that creates a workspace.
+    state.overrideListFails = true;
+    state.overrideRows = [{ plan_id: "business" }];
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, DEVELOPER)).toBe(1);
+  });
+
+  it("takes the best across several overridden workspaces", async () => {
+    state.overrideRows = [{ plan_id: "premium" }, { plan_id: "business" }];
+    expect(await effectiveOrganizationAllowance(client, { organizationIds: OWNED, subscriptions: freeEverywhere }, DEVELOPER)).toBeNull();
   });
 });

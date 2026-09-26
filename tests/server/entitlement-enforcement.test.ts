@@ -28,6 +28,12 @@ const state = vi.hoisted(() => {
     ownershipQueries: [] as { userId: string; role: string }[],
     created: [] as { name: string; entityType?: string }[],
     subscription: { planId: "free", status: "active" } as { planId: string; status: string } | null,
+    /** The deployment's developer allowlist, and the session's email. */
+    developerAccounts: undefined as string | undefined,
+    userEmail: "someone@example.test" as string | null,
+    emailConfirmed: true,
+    /** Test plans set on workspaces this user owns. */
+    overrideRows: [] as { plan_id: string }[],
     messagesUsedToday: 0,
     respondCalls: 0,
     usageRecords: [] as { organizationId: string; inputTokens: number; outputTokens: number; model: string }[],
@@ -44,12 +50,27 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ getAll: () => [], set: () => {} }) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/server/supabase/server", () => ({ createClient: async () => ({}) }));
+vi.mock("@/lib/server-env", () => ({
+  serverEnv: () => ({ DEVELOPER_ACCOUNTS: state.developerAccounts }),
+}));
+
+/** Supports only the developer-override lookup; everything else on this client
+ *  is mocked at the repository level above. */
+vi.mock("@/server/supabase/server", () => ({
+  createClient: async () => ({
+    from: () => ({
+      select: () => ({
+        in: async () => ({ data: state.overrideRows, error: null }),
+        eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+      }),
+    }),
+  }),
+}));
 vi.mock("@/server/supabase/admin", () => ({ createAdminClient: () => ({ __admin: true }) }));
 
 vi.mock("@/server/auth/session", () => ({
-  requireUser: async () => ({ id: state.userId }),
-  getSession: async () => ({ id: state.userId }),
+  requireUser: async () => ({ id: state.userId, email: state.userEmail, email_confirmed_at: state.emailConfirmed ? "2026-01-01T00:00:00.000Z" : null }),
+  getSession: async () => ({ id: state.userId, email: state.userEmail, email_confirmed_at: state.emailConfirmed ? "2026-01-01T00:00:00.000Z" : null }),
   requireOrgMembership: async (organizationId: string) => ({
     user: { id: state.userId },
     membership: { organizationId, userId: state.userId, role: "owner" },
@@ -167,6 +188,10 @@ beforeEach(() => {
   state.ownershipQueries = [];
   state.created = [];
   state.subscription = { planId: "free", status: "active" };
+  state.developerAccounts = undefined;
+  state.userEmail = "someone@example.test";
+  state.emailConfirmed = true;
+  state.overrideRows = [];
   state.messagesUsedToday = 0;
   state.respondCalls = 0;
   state.usageRecords = [];
@@ -643,5 +668,100 @@ describe("the developer test plan changes what a workspace may DO, never what it
     // The decision reads the session and the environment. Not a cookie the
     // browser set, not a query parameter, not a header.
     expect(resolver).not.toMatch(/searchParams|cookies\(\)|headers\(\)|localStorage/);
+  });
+});
+
+describe("a developer's test plan reaches the workspace limit too", () => {
+  /**
+   * This was the one gap. `effectivePlan` gates bank connections, documents and
+   * the assistant, and all of them honoured the override. The workspace
+   * allowance did not: it reads subscription rows across every workspace the
+   * person owns, so it never went through `effectivePlan` at all — and a
+   * developer testing as Business was still refused a second workspace.
+   *
+   * Reported from production: "i cannot create more than one workspace" while
+   * Settings correctly showed Business.
+   */
+
+  const DEVELOPER_EMAIL = "dev@example.test";
+
+  function asDeveloper() {
+    state.developerAccounts = DEVELOPER_EMAIL;
+    state.userEmail = DEVELOPER_EMAIL;
+    state.emailConfirmed = true;
+  }
+
+  it("refuses a second workspace on Free, exactly as before", async () => {
+    ownsOrganizations(1);
+    const result = await createOrganization();
+    expect(result.error).toMatch(/1 organization/);
+    expect(state.created).toEqual([]);
+  });
+
+  it("allows it when a developer is testing as Business", async () => {
+    asDeveloper();
+    ownsOrganizations(1);
+    state.overrideRows = [{ plan_id: "business" }];
+
+    const result = await createOrganization();
+
+    expect(result.error).toBeUndefined();
+    expect(state.created).toHaveLength(1);
+  });
+
+  it("allows up to Premium's allowance, and no further", async () => {
+    asDeveloper();
+    state.overrideRows = [{ plan_id: "premium" }];
+
+    ownsOrganizations(2);
+    expect((await createOrganization()).error).toBeUndefined();
+
+    state.created = [];
+    ownsOrganizations(3);
+    // Premium is 3 workspaces. The override grants exactly what the plan
+    // grants — never more.
+    expect((await createOrganization()).error).toMatch(/3 organizations/);
+    expect(state.created).toEqual([]);
+  });
+
+  it("does nothing for an ordinary account, even with a row present", async () => {
+    // The escalation this must never allow.
+    state.developerAccounts = DEVELOPER_EMAIL;
+    state.userEmail = "someone@example.test";
+    ownsOrganizations(1);
+    state.overrideRows = [{ plan_id: "business" }];
+
+    expect((await createOrganization()).error).toMatch(/1 organization/);
+    expect(state.created).toEqual([]);
+  });
+
+  it("does nothing on a deployment that configured no developer list", async () => {
+    state.developerAccounts = undefined;
+    state.userEmail = DEVELOPER_EMAIL;
+    ownsOrganizations(1);
+    state.overrideRows = [{ plan_id: "business" }];
+
+    expect((await createOrganization()).error).toMatch(/1 organization/);
+  });
+
+  it("does nothing when the developer's email is unconfirmed", async () => {
+    asDeveloper();
+    state.emailConfirmed = false;
+    ownsOrganizations(1);
+    state.overrideRows = [{ plan_id: "business" }];
+
+    expect((await createOrganization()).error).toMatch(/1 organization/);
+  });
+
+  it("still derives ownership from the session, not from the request", async () => {
+    asDeveloper();
+    ownsOrganizations(1);
+    state.overrideRows = [{ plan_id: "business" }];
+    state.ownershipQueries = [];
+
+    await createOrganization();
+
+    // The count comes from organizations this user actually owns.
+    expect(state.ownershipQueries).toEqual([{ userId: state.userId, role: "owner" }]);
   });
 });

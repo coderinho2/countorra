@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, PlanTier } from "@/types/database";
 import { serverEnv } from "@/lib/server-env";
 import { getSubscription } from "@/server/db/repositories/subscriptions";
-import { entitlementsFor, type PlanEntitlements } from "@/domain/billing/entitlements";
+import { entitlementsFor, organizationAllowance, type PlanEntitlements, type SubscriptionState } from "@/domain/billing/entitlements";
 import { developerAccounts, isDeveloperAccount, type PlanSource } from "@/domain/billing/developer-override";
 
 type Client = SupabaseClient<Database>;
@@ -102,6 +102,46 @@ export async function effectivePlan(
   if (!override) return { entitlements: billed, source: "subscription", billedTier: billed.tier };
 
   return { entitlements: PLANS[override], source: "developer_override", billedTier: billed.tier };
+}
+
+/**
+ * How many workspaces this person may own, with their test plans counted.
+ *
+ * WHY THIS IS SEPARATE FROM `effectivePlan`. Every other gate asks about ONE
+ * workspace, so it can resolve one workspace's plan. The organization
+ * allowance is the exception: it is a fact about the PERSON, taken as the best
+ * allowance across every workspace they own (`organizationAllowance`), and
+ * asked at the moment they are creating a workspace that does not exist yet.
+ *
+ * It was therefore the one enforcement point the override did not reach —
+ * Business grants unlimited workspaces, and a developer testing as Business
+ * was still held to Free's single workspace, because this path reads
+ * subscription rows and nothing else.
+ *
+ * The override rows are folded in as the tiers they name and passed through
+ * the SAME `organizationAllowance`, so:
+ *   - an override can never LOWER the allowance a real subscription gives;
+ *   - it can never grant more than a purchasable plan grants, because the
+ *     tier is looked up in the same entitlements table;
+ *   - a non-developer, or a deployment with no DEVELOPER_ACCOUNTS, gets
+ *     exactly the previous answer, computed the previous way.
+ */
+export async function effectiveOrganizationAllowance(
+  client: Client,
+  input: { organizationIds: readonly string[]; subscriptions: SubscriptionState[] },
+  user: { email?: string | null; email_confirmed_at?: string | null } | null | undefined,
+): Promise<number | null> {
+  const billed = organizationAllowance(input.subscriptions);
+  if (!isDeveloperSession(user) || input.organizationIds.length === 0) return billed;
+
+  const { data, error } = await client.from("developer_plan_overrides").select("plan_id").in("organization_id", [...input.organizationIds]);
+  // Same rule as `readPlanOverride`: a failure here is "no override", never an
+  // error on a path whose job is to create a workspace.
+  if (error || !data || data.length === 0) return billed;
+
+  // `organizationAllowance` already takes the best across states and treats
+  // null as unlimited, so the overrides are simply more states.
+  return organizationAllowance([...input.subscriptions, ...data.map((row) => ({ planId: row.plan_id, status: "active" as const }))]);
 }
 
 /** Entitlements by tier, without a subscription in hand. Uses the same table

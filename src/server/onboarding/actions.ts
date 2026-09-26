@@ -5,7 +5,8 @@ import { createClient } from "@/server/supabase/server";
 import { requireUser } from "@/server/auth/session";
 import { createOrganization } from "@/server/db/repositories/organizations";
 import { listOwnedOrganizationSubscriptions } from "@/server/db/repositories/subscriptions";
-import { canCreateOrganization, formatOrganizationAllowance, organizationAllowance } from "@/domain/billing/entitlements";
+import { canCreateOrganization, formatOrganizationAllowance } from "@/domain/billing/entitlements";
+import { effectiveOrganizationAllowance } from "@/server/billing/developer-override";
 import { createOrganizationSchema } from "@/validation/schemas/organization";
 
 export interface OnboardingActionResult {
@@ -52,7 +53,12 @@ export async function completeOnboarding(_prev: OnboardingActionResult, formData
   // subscription rows (which only the bootstrap trigger and a future billing
   // webhook can write — never a client).
   const { organizationIds, subscriptions } = await listOwnedOrganizationSubscriptions(client, user.id);
-  const allowance = organizationAllowance(subscriptions);
+  // Real subscriptions, plus any TEST plan a developer of this deployment has
+  // set on a workspace they own. Without that second part this was the one
+  // enforcement point the override never reached: testing as Business grants
+  // unlimited workspaces everywhere except here. It can only ever raise the
+  // allowance, and only for an allowlisted, confirmed developer account.
+  const allowance = await effectiveOrganizationAllowance(client, { organizationIds, subscriptions }, user);
   if (!canCreateOrganization(organizationIds.length, allowance)) {
     return {
       error: `Your plan includes ${formatOrganizationAllowance(allowance)}. Upgrade to add another workspace.`,
