@@ -3,8 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { resolveBankProvider, type BankConnectionProvider } from "@/domain/bank-connections/provider";
 import { listAccounts } from "@/server/db/repositories/accounts";
-import { getSubscription } from "@/server/db/repositories/subscriptions";
-import { entitlementsFor } from "@/domain/billing/entitlements";
+import { effectivePlan } from "@/server/billing/developer-override";
 import {
   countExternalTransactions,
   listBankConnections,
@@ -44,14 +43,22 @@ export interface BankConnectionsWorkspace {
  * RLS-scoped client and only the columns granted to members. Bounded: at most
  * 100 connections, and counts rather than rows for their transactions.
  */
-export async function loadBankConnectionsWorkspace(client: Client, organizationId: string, providers: readonly BankConnectionProvider[]): Promise<BankConnectionsWorkspace> {
+export async function loadBankConnectionsWorkspace(
+  client: Client,
+  organizationId: string,
+  providers: readonly BankConnectionProvider[],
+  /** The session, so a developer's test plan applies here exactly as it does
+   *  at the action that enforces it. Omitted by any caller without one, which
+   *  then sees the real subscription. */
+  user?: { email?: string | null; email_confirmed_at?: string | null } | null,
+): Promise<BankConnectionsWorkspace> {
   const availability = resolveBankProvider(providers);
-  const [connections, accounts, subscription] = await Promise.all([
+  const [connections, accounts, plan] = await Promise.all([
     listBankConnections(client, organizationId),
     listAccounts(client, organizationId, { includeArchived: false }),
-    getSubscription(client, organizationId),
+    effectivePlan(client, organizationId, user),
   ]);
-  const entitlements = entitlementsFor(subscription);
+  const entitlements = plan.entitlements;
   const connectionIds = connections.map((connection) => connection.id);
 
   const [linked, jobs, reviewItems, counts] = await Promise.all([

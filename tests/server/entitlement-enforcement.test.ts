@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -586,3 +587,61 @@ describe("launch scope — personal workspaces only", () => {
   });
 });
 
+describe("the developer test plan changes what a workspace may DO, never what it is billed", () => {
+  /**
+   * A test override that reached Stripe Checkout would break the thing it
+   * exists to test: a developer testing as Premium would be told "this
+   * workspace is already on that plan" and could not complete a real upgrade.
+   * A test override that reached the pricing page would make the marketing
+   * site claim a purchase nobody made.
+   *
+   * So the split is deliberate and load-bearing, and these cases pin it:
+   * FEATURE GATES read the effective plan, BILLING TRUTH reads the
+   * subscription. Source-level, because the consequence of getting it wrong
+   * is not a failing assertion anywhere else — it is a customer who cannot
+   * pay, or a page that lies.
+   */
+  const read = (relative: string) => readFileSync(relative, "utf8");
+
+  it("gates every paid FEATURE on the effective plan", () => {
+    for (const file of [
+      "src/server/bank-connections/actions.ts",
+      "src/server/bank-connections/workspace.ts",
+      "src/server/documents/intelligence-actions.ts",
+      "src/server/ai/actions.ts",
+    ]) {
+      expect(read(file), file).toContain("effectivePlan(");
+    }
+  });
+
+  it("keeps Stripe Checkout on the REAL subscription", () => {
+    const billing = read("src/server/billing/actions.ts");
+    expect(billing).toContain("entitlementsFor(subscription)");
+    expect(billing).not.toContain("effectivePlan");
+  });
+
+  it("keeps the pricing page's view of a plan on the REAL subscription", () => {
+    const viewer = read("src/server/billing/viewer-context.ts");
+    expect(viewer).toContain("entitlementsFor(subscription)");
+    expect(viewer).not.toContain("effectivePlan");
+  });
+
+  it("writes nothing to subscriptions from the override path", () => {
+    for (const file of ["src/server/billing/developer-override.ts", "src/server/billing/developer-actions.ts"]) {
+      const code = read(file)
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+      // Reading the subscription is how the real plan is known; WRITING one
+      // would be the fake-billing mistake.
+      expect(code, file).not.toMatch(/from\("subscriptions"\)\s*\.\s*(insert|update|upsert|delete)/);
+      expect(code, file).not.toContain("stripe");
+    }
+  });
+
+  it("has no client-controlled input anywhere in the decision", () => {
+    const resolver = read("src/server/billing/developer-override.ts");
+    // The decision reads the session and the environment. Not a cookie the
+    // browser set, not a query parameter, not a header.
+    expect(resolver).not.toMatch(/searchParams|cookies\(\)|headers\(\)|localStorage/);
+  });
+});

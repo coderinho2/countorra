@@ -11,6 +11,9 @@ import { countUserMessagesSince } from "@/server/db/repositories/ai-conversation
 import { can } from "@/domain/organizations/permissions";
 import { formatAiMessageLimit, last24HoursIso } from "@/domain/billing/limits";
 import { entitlementsFor } from "@/domain/billing/entitlements";
+import { effectivePlan, isDeveloperSession, readPlanOverride } from "@/server/billing/developer-override";
+import { planLabelWithSource } from "@/domain/billing/developer-override";
+import { DeveloperPlanPanel } from "@/components/settings/developer-plan-panel";
 import { isRecoverableStatus } from "@/domain/billing/stripe-subscription";
 import { ManageBillingButton } from "@/components/billing/manage-billing-button";
 import { isBillingConfigured } from "@/server/billing/stripe-config";
@@ -77,8 +80,21 @@ export default async function SettingsPage({ params }: { params: Promise<{ orgId
   // displayed Premium's allowance in Settings while the AI action enforced
   // Free — the meter and the number beside it disagreeing about the same
   // workspace. One resolver, one answer.
-  const entitlements = entitlementsFor(subscription);
+  // The REAL subscription decides what is billed and what Checkout offers.
+  const billed = entitlementsFor(subscription);
+
+  // The EFFECTIVE plan decides what this workspace may do — the same answer
+  // every enforcement point gives, so Settings cannot show one thing while an
+  // action does another.
+  const effective = await effectivePlan(client, orgId, user);
+  const entitlements = effective.entitlements;
   const planTier: PlanTier = entitlements.tier;
+
+  // Only a developer of this deployment who OWNS this workspace sees the
+  // panel at all. The action re-checks both; this just avoids rendering a
+  // control nobody else may use.
+  const showDeveloperPanel = isDeveloperSession(user) && membership.role === "owner";
+  const developerOverride = showDeveloperPanel ? await readPlanOverride(client, orgId) : null;
   const currentPlan = plans.find((p) => p.id === planTier);
   const aiDailyLimit = entitlements.aiMessagesPerDay;
   const aiMessagesUsedToday = await countUserMessagesSince(client, orgId, last24HoursIso());
@@ -149,12 +165,22 @@ export default async function SettingsPage({ params }: { params: Promise<{ orgId
             />
           </SettingsSection>
 
+          {showDeveloperPanel && (
+            <SettingsSection
+              id="developer-plan"
+              title="Developer test plan"
+              description="Behave as another plan on this workspace, for testing. Entitlements only — billing is untouched."
+            >
+              <DeveloperPlanPanel organizationId={orgId} override={developerOverride} billedPlanName={billed.name} />
+            </SettingsSection>
+          )}
+
           <SettingsSection id="plan" title="Plan &amp; usage" description="What this workspace is on, and what it has used.">
             <div className="flex flex-col gap-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="flex flex-col gap-1">
                   <p className="flex items-center gap-2 text-[15px] font-medium text-text-primary">
-                    {entitlements.name}
+                    {planLabelWithSource(entitlements.name, effective.source)}
                     <Badge variant={billingBadge.variant}>{billingBadge.label}</Badge>
                   </p>
                   <p className="text-[13px] text-text-secondary">

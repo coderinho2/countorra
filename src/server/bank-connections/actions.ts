@@ -8,8 +8,7 @@ import { can } from "@/domain/organizations/permissions";
 import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { enforceRateLimit } from "@/server/security/rate-limit";
 import { reportError } from "@/lib/observability";
-import { getSubscription } from "@/server/db/repositories/subscriptions";
-import { entitlementsFor } from "@/domain/billing/entitlements";
+import { effectivePlan } from "@/server/billing/developer-override";
 import { BANK_PROVIDER_NOT_CONFIGURED_MESSAGE } from "@/domain/bank-connections/provider";
 import { CONNECTION_STATUS_PRESENTATION, SYNC_FAILURE_TEXT } from "@/domain/bank-connections/presentation";
 import { bankLinkStateKeyset, configuredBankProviders } from "./providers";
@@ -63,9 +62,16 @@ function field(formData: FormData, name: string): string | undefined {
  * does the plan decide, from the canonical entitlement model (a lapsed
  * subscription is Free there, so it is Free here).
  */
-async function bankAccess(client: Awaited<ReturnType<typeof createClient>>, organizationId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+async function bankAccess(
+  client: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  user: { email?: string | null; email_confirmed_at?: string | null },
+): Promise<{ ok: true } | { ok: false; error: string }> {
   if (configuredBankProviders().length === 0) return { ok: false, error: BANK_PROVIDER_NOT_CONFIGURED_MESSAGE };
-  const entitlements = entitlementsFor(await getSubscription(client, organizationId));
+  // The EFFECTIVE plan: the real subscription, unless a developer of this
+  // deployment has set a test plan on a workspace they own. The gate itself
+  // is unchanged — a Free workspace is still refused.
+  const { entitlements } = await effectivePlan(client, organizationId, user);
   if (!entitlements.bankConnections) {
     return { ok: false, error: `Bank connections are part of Premium and Business. This workspace is on ${entitlements.name}.` };
   }
@@ -105,7 +111,7 @@ export async function startBankLinkAction(_prev: BankActionResult, formData: For
   if (!limited.allowed) return { error: limited.message };
 
   const client = await createClient();
-  const access = await bankAccess(client, organizationId);
+  const access = await bankAccess(client, organizationId, user);
   if (!access.ok) return { error: access.error };
 
   try {
@@ -163,7 +169,7 @@ export async function completeBankLinkAction(_prev: BankActionResult, formData: 
   if (!limited.allowed) return { error: limited.message };
 
   const client = await createClient();
-  const access = await bankAccess(client, organizationId);
+  const access = await bankAccess(client, organizationId, user);
   if (!access.ok) return { error: access.error };
 
   const result = await finishLink(client, organizationId, user.id, parsed.data.publicToken);
@@ -194,6 +200,8 @@ async function finishLink(client: Awaited<ReturnType<typeof createClient>>, orga
         return { error: SYNC_FAILURE_TEXT[outcome.category] };
       case "belongs_elsewhere":
         return { error: "That bank connection can't be added to this workspace." };
+      case "previously_disconnected":
+        return { error: "This workspace disconnected that exact bank connection before, and its record is kept. Connect the bank again from its own sign-in, or contact support if it keeps returning here." };
       case "already_connected":
         return { success: true, message: "That bank is already connected." };
       case "failed":
@@ -233,7 +241,7 @@ export async function completeBankReauthAction(_prev: BankActionResult, formData
   if (!limited.allowed) return { error: limited.message };
 
   const client = await createClient();
-  const access = await bankAccess(client, organizationId);
+  const access = await bankAccess(client, organizationId, user);
   if (!access.ok) return { error: access.error };
 
   const result = await finishReauth(client, organizationId, user.id, connectionId);
@@ -354,7 +362,7 @@ export async function completeBankOauthAction(_prev: BankActionResult, formData:
   if (!limited.allowed) return { error: limited.message };
 
   const client = await createClient();
-  const access = await bankAccess(client, organizationId);
+  const access = await bankAccess(client, organizationId, user);
   if (!access.ok) {
     await clearBankLinkStateCookie();
     return { error: access.error };

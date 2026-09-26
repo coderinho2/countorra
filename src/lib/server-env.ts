@@ -94,6 +94,21 @@ const serverSchema = z.object({
    */
   BANK_CREDENTIAL_ENCRYPTION_KEY: z.string().min(32).optional(),
 
+  /**
+   * Comma-separated emails that may set a TEST PLAN on a workspace they own
+   * (src/domain/billing/developer-override.ts).
+   *
+   * Entitlements only — it creates no Stripe customer, no subscription and no
+   * invoice, and `subscriptions` is never written. Unset, which is the
+   * default, means the mechanism does not exist on this deployment: no row in
+   * `developer_plan_overrides` is acted on and none can be written.
+   *
+   * Server-only, like everything in this file. It is a list of addresses
+   * rather than a secret, but it decides who may change what a workspace can
+   * do, so it belongs nowhere a browser can read it.
+   */
+  DEVELOPER_ACCOUNTS: z.string().min(3).optional(),
+
   // -- Amazon Textract (document OCR) -----------------------------------
   // Server-only. Textract is called from the server with the document bytes
   // in the request body; no bucket is involved, so no S3 permission is
@@ -144,7 +159,7 @@ function assertBankConfigurationIsWhole(env: z.infer<typeof serverSchema>): void
  * otherwise surface as an opaque AWS credential error on somebody's receipt,
  * so it is refused at configuration time instead.
  */
-function assertTextractConfigurationIsWhole(env: z.infer<typeof serverSchema>): void {
+function assertTextractConfigurationIsWhole(env: Pick<z.infer<typeof serverSchema>, "AWS_REGION" | "AWS_ACCESS_KEY_ID" | "AWS_SECRET_ACCESS_KEY">): void {
   const hasId = env.AWS_ACCESS_KEY_ID !== undefined;
   const hasSecret = env.AWS_SECRET_ACCESS_KEY !== undefined;
   if (hasId !== hasSecret) {
@@ -155,6 +170,43 @@ function assertTextractConfigurationIsWhole(env: z.infer<typeof serverSchema>): 
   if (!env.AWS_REGION && (hasId || hasSecret)) {
     throw new Error("AWS credentials are set but AWS_REGION is not, so no Textract endpoint can be chosen. Set AWS_REGION, or unset the credentials.");
   }
+}
+
+const textractSchema = serverSchema.pick({ AWS_REGION: true, AWS_ACCESS_KEY_ID: true, AWS_SECRET_ACCESS_KEY: true });
+
+/**
+ * Just the AWS half, for the one caller that only needs the AWS half.
+ *
+ * `serverEnv()` validates EVERY server secret, including the two required
+ * ones, and the Textract client used to read its region from it. That coupled
+ * "is there an OCR reader?" to "is the whole deployment configured?" — and
+ * because the caller turns any failure into "no reader", a missing
+ * SUPABASE_SERVICE_ROLE_KEY was reported as "Textract is not configured for
+ * this deployment". It is the same misreport in either direction: an operator
+ * debugging OCR is sent to the AWS console over a Supabase variable, and an
+ * opt-in live Textract test cannot run without also holding secrets that have
+ * nothing to do with Textract.
+ *
+ * The FIELDS ARE PICKED from `serverSchema` rather than restated, so the rules
+ * cannot drift apart, and `assertTextractConfigurationIsWhole` runs here too:
+ * a lone half of a key pair is refused on this path exactly as it is on the
+ * full one. Nothing is validated more loosely than before — this validates
+ * LESS, of only what it uses.
+ *
+ * Uncached, unlike `serverEnv()`: three fields are cheap to re-parse, and the
+ * consumer that matters caches the AWS client itself.
+ */
+export function textractEnv(): z.infer<typeof textractSchema> {
+  if (typeof window !== "undefined") {
+    throw new Error("textractEnv() must never be called from the client.");
+  }
+  const env = textractSchema.parse({
+    AWS_REGION: process.env.AWS_REGION || undefined,
+    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || undefined,
+    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || undefined,
+  });
+  assertTextractConfigurationIsWhole(env);
+  return env;
 }
 
 let cachedServerEnv: z.infer<typeof serverSchema> | undefined;
@@ -191,6 +243,7 @@ export function serverEnv() {
       // already typed their bank password, because the credential store would
       // be missing at exactly that moment.
       BANK_CREDENTIAL_ENCRYPTION_KEY: process.env.BANK_CREDENTIAL_ENCRYPTION_KEY || process.env.BANK_CREDENTIAL_ENCRYPTION_KEYS || undefined,
+      DEVELOPER_ACCOUNTS: process.env.DEVELOPER_ACCOUNTS || undefined,
       AWS_REGION: process.env.AWS_REGION || undefined,
       AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || undefined,
       AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || undefined,

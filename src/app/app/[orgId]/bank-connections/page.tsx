@@ -12,9 +12,12 @@ import { BankConnectionsView } from "@/components/bank-connections/bank-connecti
  */
 export default async function BankConnectionsPage({ params }: { params: Promise<{ orgId: string }> }) {
   const { orgId } = await params;
-  const { membership } = await requireOrgMembership(orgId);
+  const { membership, user } = await requireOrgMembership(orgId);
   const client = await createClient();
-  const workspace = await loadBankConnectionsWorkspace(client, orgId, configuredBankProviders());
+  // The session travels in so that a developer's test plan is reflected here
+  // exactly as the actions enforce it — a page that showed "upgrade" while
+  // the action allowed the call would be worse than no override at all.
+  const workspace = await loadBankConnectionsWorkspace(client, orgId, configuredBankProviders(), user);
 
   return (
     <BankConnectionsView

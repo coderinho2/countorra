@@ -34,9 +34,8 @@ import {
   type AiConversation,
   type AiMessage,
 } from "@/server/db/repositories/ai-conversations";
-import { getSubscription } from "@/server/db/repositories/subscriptions";
 import { last24HoursIso } from "@/domain/billing/limits";
-import { entitlementsFor } from "@/domain/billing/entitlements";
+import { effectivePlan } from "@/server/billing/developer-override";
 import { exceedsStructuralBound } from "@/domain/billing/provider-budget";
 import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { clientAddress, enforceRateLimit } from "@/server/security/rate-limit";
@@ -164,9 +163,12 @@ export async function sendAiMessage(input: SendAiMessageInput): Promise<SendAiMe
   // cancelled or incomplete subscription rather than honouring a tier the
   // organization is no longer paying for. That is what makes a downgrade take
   // effect on the next request instead of needing a reconciliation job, and
-  // it is the hook Stripe will write to.
-  const subscription = await getSubscription(client, parsed.data.organizationId);
-  const entitlements = entitlementsFor(subscription);
+  // it is the hook Stripe writes to.
+  //
+  // The one exception is a developer of this deployment testing a plan on a
+  // workspace they own (src/server/billing/developer-override.ts). It changes
+  // the allowance and nothing else: no subscription row, no Stripe object.
+  const { entitlements } = await effectivePlan(client, parsed.data.organizationId, user);
   const plan: PlanTier = entitlements.tier;
   const dailyLimit = entitlements.aiMessagesPerDay;
 

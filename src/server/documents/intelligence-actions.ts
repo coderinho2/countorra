@@ -8,8 +8,7 @@ import { requireOrgMembership } from "@/server/auth/session";
 import { can } from "@/domain/organizations/permissions";
 import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { enforceRateLimit } from "@/server/security/rate-limit";
-import { entitlementsFor } from "@/domain/billing/entitlements";
-import { getSubscription } from "@/server/db/repositories/subscriptions";
+import { effectivePlan } from "@/server/billing/developer-override";
 import { textractConfigured } from "./textract/client";
 import { reportError } from "@/lib/observability";
 import { isSupportedCurrency } from "@/domain/money/currency";
@@ -72,9 +71,15 @@ function field(formData: FormData, name: string): string | undefined {
  * bill, there is nothing to gate, and a deployment without credentials must
  * not start telling people to upgrade.
  */
-async function allowsPaidOcr(client: Awaited<ReturnType<typeof createClient>>, organizationId: string): Promise<boolean> {
+async function allowsPaidOcr(
+  client: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  user: { email?: string | null; email_confirmed_at?: string | null },
+): Promise<boolean> {
   if (!textractConfigured()) return true;
-  return entitlementsFor(await getSubscription(client, organizationId)).documentProcessing;
+  // The EFFECTIVE plan, so a developer's test plan reaches the billed reader
+  // the same way a purchase would. The gate is unchanged.
+  return (await effectivePlan(client, organizationId, user)).entitlements.documentProcessing;
 }
 
 const STATUS_MESSAGE: Record<string, string> = {
@@ -99,7 +104,7 @@ export async function processDocumentAction(_prev: DocumentIntelligenceActionRes
   // Read once, after the rate limit and before anything is processed. The
   // decision travels into the pipeline rather than blocking the action, so a
   // free local read still happens on every plan.
-  const allowPaidOcr = await allowsPaidOcr(client, parsed.data.organizationId);
+  const allowPaidOcr = await allowsPaidOcr(client, parsed.data.organizationId, user);
 
   try {
     const outcome = await processDocument(

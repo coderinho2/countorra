@@ -100,6 +100,10 @@ export const AUDIT_ACTIONS = {
    *  statuses, reasons, outcome codes and counts — never a provider identifier,
    *  credential, cursor, amount, merchant or description. */
   bankLinkStarted: "bank_connection.link_started",
+  /** A developer of this deployment set or cleared a workspace's TEST plan.
+   *  Entitlements only — billing is untouched, and the metadata carries the
+   *  tier and nothing else. */
+  developerPlanOverrideChanged: "billing.developer_plan_override_changed",
   bankConnectionConnected: "bank_connection.connected",
   bankConnectionStatusChanged: "bank_connection.status_changed",
   bankConnectionReauthenticated: "bank_connection.reauthenticated",
