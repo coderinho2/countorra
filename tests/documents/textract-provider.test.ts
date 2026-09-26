@@ -15,12 +15,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   env: {} as Record<string, unknown>,
+  /** Set to make the AWS environment unreadable, as a half key pair does. */
+  envThrows: null as string | null,
   sent: [] as { command: string; input: unknown }[],
   respond: {} as Record<string, () => unknown>,
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/server-env", () => ({ serverEnv: () => state.env }));
+vi.mock("@/lib/server-env", () => ({
+  textractEnv: () => {
+    if (state.envThrows) throw new Error(state.envThrows);
+    return state.env;
+  },
+}));
 
 vi.mock("@aws-sdk/client-textract", () => {
   class Command {
@@ -62,6 +69,7 @@ const line = (text: string, confidence = 99) => ({
 
 beforeEach(() => {
   state.env = { AWS_REGION: "us-east-1" };
+  state.envThrows = null;
   state.sent = [];
   state.respond = {};
   __resetTextractClientForTests();
@@ -77,13 +85,13 @@ describe("configuration", () => {
     expect(textractConfigured()).toBe(true);
   });
 
-  it("is off when the environment cannot be read at all, rather than throwing", () => {
-    vi.doMock("@/lib/server-env", () => ({
-      serverEnv: () => {
-        throw new Error("missing SUPABASE_SERVICE_ROLE_KEY");
-      },
-    }));
+  it("is off when the AWS configuration cannot be read, rather than throwing", () => {
+    // Half a key pair: refused by assertTextractConfigurationIsWhole, which
+    // is the one failure that still reaches this path. An upload answers "no
+    // reader is configured" instead of an AWS credential error.
+    state.envThrows = "AWS credentials are partly configured";
     expect(() => textractConfigured()).not.toThrow();
+    expect(textractConfigured()).toBe(false);
   });
 });
 

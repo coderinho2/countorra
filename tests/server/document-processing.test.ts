@@ -56,6 +56,9 @@ vi.mock("@/lib/observability", () => ({
 
 vi.mock("@/server/db/repositories/documents", () => ({
   getVisibleDocument: async () => state.document,
+  // Retention (0058): true unless a case sets `originalRemovedAt`, so every
+  // existing case keeps the behaviour it was written for.
+  hasOriginal: (document: { originalRemovedAt?: string | null } | null) => (document?.originalRemovedAt ?? null) === null,
 }));
 
 vi.mock("@/server/db/repositories/document-intelligence", () => ({

@@ -230,6 +230,14 @@ export const RATE_LIMITS = {
     rationale:
       "The background sync endpoint is guarded by a deployment secret, not a session, so the only attack on it is guessing that secret. A scheduler calling every five minutes needs 12 an hour; 120 leaves room for a second cron and manual runs while making guessing pointless.",
   },
+  documentRetentionPerIp: {
+    namespace: "documents:retention:ip",
+    limit: 120,
+    windowSeconds: 3600,
+    failureMode: "closed",
+    rationale:
+      "The retention sweep is guarded by a deployment secret rather than a session, so the only attack on it is guessing that secret. A daily cron needs one an hour; 120 leaves room for manual runs and for paging through a backlog while making guessing pointless. It deletes only files already past their retention window, so the worst a successful call does is bring that deletion forward.",
+  },
   bankAccountLinkPerUser: {
     namespace: "bank:account-link:user",
     limit: 60,
@@ -283,6 +291,7 @@ export const RATE_LIMIT_GROUPS = {
   bankDisconnect: ["bankDisconnectPerUser"],
   bankAccountLink: ["bankAccountLinkPerUser"],
   bankWorker: ["bankWorkerPerIp"],
+  documentRetention: ["documentRetentionPerIp"],
   recordMutation: ["recordMutationPerUser"],
   privilegedMutation: ["privilegedMutationPerUser"],
   search: ["searchPerUser"],

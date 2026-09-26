@@ -48,6 +48,7 @@ runbook), [SECURITY-RATE-LIMITING.md](SECURITY-RATE-LIMITING.md).
 | Plaid | Sandbox | Sandbox | Production (after approval) |
 | Stripe | Test mode | Test mode | Live mode |
 | Worker cron | none — invoke by hand | none — Vercel does not run crons on previews | once a day, 06:00 UTC (`vercel.json`; Vercel Hobby allows daily only) |
+| Retention cron | none — invoke by hand | none | once a day, 07:00 UTC (`vercel.json`) — deletes identity-document originals past their window |
 | Email (auth) | Supabase built-in | Supabase custom SMTP | Supabase custom SMTP |
 | `VERCEL_ENV` | unset | `preview` | `production` |
 
@@ -340,6 +341,13 @@ no data is touched.
 
 ## 7. Worker cron
 
+`vercel.json` schedules **two** daily crons on the production deployment:
+`/api/bank-connections/worker` at 06:00 UTC, and `/api/documents/retention` at
+07:00 UTC. Vercel's Hobby plan allows two cron jobs, daily only; they are an
+hour apart so the two 60-second functions never contend.
+
+### 7a. Bank sync worker
+
 `vercel.json` runs `/api/bank-connections/worker` **once a day** —
 `0 6 * * *`, i.e. some time between 06:00 and 06:59 UTC — on the
 **production** deployment (Vercel never runs crons on previews). Daily is what
@@ -367,6 +375,39 @@ within the scheduled hour) — or 5 minutes / ~15 minutes if you add a
 five-minute scheduler below — and put its ping URL in
 `BANK_SYNC_HEARTBEAT_URL` (Production only). The route pings it
 after every successful invocation; if the cron stops, you are alerted.
+
+### 7b. Identity-document retention sweep
+
+`vercel.json` runs `/api/documents/retention` once a day at 07:00 UTC. It
+deletes the STORED FILE of identity documents whose retention window has
+passed — seven days after the document was read (migration 0058,
+`src/domain/documents/retention.ts`). Nothing else is touched: the `documents`
+row, its filename and its extraction all survive, and a financial document
+never has an expiry at all.
+
+| Requirement | Why |
+| --- | --- |
+| `CRON_SECRET` set | Vercel sends `Authorization: Bearer $CRON_SECRET`. Without it the route answers 404 and nothing runs. It is the same variable the bank worker requires, so a correctly configured deployment already has it. |
+| Nothing else | No AWS, no Plaid, no Stripe. The sweep runs on every deployment, including ones with no bank provider configured. |
+
+Safe to call repeatedly and safe to interrupt. It acts only on rows already
+past their expiry, deletes the bytes before recording that they are gone, and
+treats an object that is already missing as done — so a re-run after a partial
+failure completes the remainder rather than wedging on what it finished. One
+invocation handles at most 50 documents and answers `remaining: true` when more
+are waiting; call it again, or let the next day's run continue.
+
+The response is counters only — `considered`, `filesRemoved`, `rowsMarked`,
+`failed`, `remaining`. No organization, no document id, no storage path: a
+storage path contains a document id and this ends up in cron logs.
+
+**The first run after deploying 0058 will do nothing.** The migration gives no
+expiry to documents that already exist; the trigger fires on new extractions
+only. Identity documents uploaded before the deploy keep their originals until
+they are read again or deleted by hand. That is deliberate — a migration that
+deleted people's files the moment it ran would be the wrong way to introduce a
+retention policy. To apply it to what is already stored, re-process those
+documents, or delete them.
 
 ### Not on Vercel — or more often than Hobby allows
 
@@ -706,6 +747,29 @@ TEXTRACT_LIVE=1 npx vitest run tests/textract-live
 
 Off by default; it makes real, billed calls. Everything else in the OCR suite
 mocks the SDK and needs no credentials.
+
+`AWS_REGION` and, on Vercel, the key pair must be **real environment variables
+of that command** — exported in the shell, or supplied by CI. The test runner
+loads no `.env.local`, so putting them in that file has no effect. Nothing else
+is needed: this path reads only the three AWS variables, so a shell holding
+them and no other secret is enough.
+
+That command proves `DetectDocumentText` and `AnalyzeExpense`, against a
+synthetic image generated in-process.
+
+**`AnalyzeID` is proven separately, and only by someone who chooses to.** It
+returns nothing for a synthetic image, so the only thing that exercises it is a
+real driver's licence or passport. No fixture is committed and none should be;
+the document is supplied by path, at run time, by the person it belongs to:
+
+```
+$env:TEXTRACT_TEST_ID_IMAGE="C:\temp\test-id.jpg"
+```
+
+The file is read into memory, sent once and dropped — never copied, cached or
+stored. The test prints field TYPE names and counts only, never a value, and
+not the path either. With the variable unset, that case **skips**; a missing
+document is never a failure.
 
 ---
 

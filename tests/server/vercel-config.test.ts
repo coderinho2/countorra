@@ -17,8 +17,20 @@ const ROOT = process.cwd();
 const config = JSON.parse(readFileSync(path.join(ROOT, "vercel.json"), "utf8")) as { crons?: { path: string; schedule: string }[] };
 
 describe("vercel.json", () => {
-  it("schedules exactly one cron: the bank sync worker", () => {
-    expect(config.crons).toEqual([{ path: "/api/bank-connections/worker", schedule: "0 6 * * *" }]);
+  it("schedules exactly two crons, and no others", () => {
+    // Listed in full rather than by count, so adding a third is a decision
+    // somebody makes here rather than a line that slips in. Hobby allows two.
+    expect(config.crons).toEqual([
+      { path: "/api/bank-connections/worker", schedule: "0 6 * * *" },
+      { path: "/api/documents/retention", schedule: "0 7 * * *" },
+    ]);
+  });
+
+  it("does not run two crons in the same hour", () => {
+    // Both are 60-second functions on the same deployment; an hour apart
+    // keeps the retention sweep out of the bank worker's window.
+    const hours = (config.crons ?? []).map((cron) => cron.schedule.trim().split(/\s+/)[1]);
+    expect(new Set(hours).size).toBe(hours.length);
   });
 
   it("runs at most once a day, which Vercel Hobby requires", () => {
@@ -35,10 +47,12 @@ describe("vercel.json", () => {
     }
   });
 
-  it("points at a route that exists, with a GET handler — Vercel Cron issues GET", () => {
-    const file = path.join(ROOT, "src/app/api/bank-connections/worker/route.ts");
-    expect(existsSync(file)).toBe(true);
-    expect(readFileSync(file, "utf8")).toMatch(/export async function GET\(/);
+  it("points every cron at a route that exists, with a GET handler — Vercel Cron issues GET", () => {
+    for (const cron of config.crons ?? []) {
+      const file = path.join(ROOT, `src/app${cron.path}/route.ts`);
+      expect(existsSync(file), cron.path).toBe(true);
+      expect(readFileSync(file, "utf8"), cron.path).toMatch(/export async function GET\(/);
+    }
   });
 
   it("passes no secret and no query in the cron path — the secret travels as CRON_SECRET", () => {

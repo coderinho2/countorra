@@ -43,7 +43,8 @@ const External = ({ href, children }: { href: string; children: React.ReactNode 
  *     address, reset password, change email, password changed
  *   AWS Textract — OCR for scans and photos; DetectDocumentText,
  *     AnalyzeExpense, AnalyzeID (src/server/documents/textract)
- *   identity documents — identifiers never stored (identity.ts + 0055)
+ *   identity documents — identifiers never stored (identity.ts + 0055);
+ *     the original file expires after 7 days (retention.ts + 0058)
  *   browser storage — the theme preference only (next-themes)
  *   no analytics, no error-tracking vendor
  *   account deletion — src/server/account/actions.ts#deleteAccountAction
@@ -242,6 +243,12 @@ export default function PrivacyPage() {
               The file itself is stored privately, exactly like any other document, and is only reachable through a short-lived link issued to you.
             </p>
             <p>
+              <Strong>The original is deleted after seven days.</Strong> An identity document is read once, and after that the image has no further use — so the
+              file is removed automatically a week after it is read, and the link stops working. What was kept from it (the document class, the issuing state,
+              the issue and expiry dates, and the masked last four digits) stays, so your record of having uploaded it remains. This applies to identity
+              documents only: a receipt or a statement is evidence for a figure in your records and is kept until you delete it.
+            </p>
+            <p>
               <LegalFact name="identityDocumentTreatment" />
             </p>
           </Section>
@@ -289,6 +296,10 @@ export default function PrivacyPage() {
               <Strong>Subscriptions:</Strong> deleting your account cancels the paid subscription of every workspace being deleted, before anything else is
               deleted, and Countorra confirms with Stripe that it will not be charged again. If that cannot be confirmed, nothing is deleted. Stripe retains
               records of payments made, under its own obligations.
+            </p>
+            <p>
+              <Strong>Identity documents</Strong> are the one exception to &ldquo;kept for as long as your account exists&rdquo;: the uploaded file is deleted
+              automatically seven days after it is read. See <a href="#identity-documents" className="text-accent hover:underline">&sect;6b</a>.
             </p>
             <p>
               <Strong>Security audit log</Strong> entries are append-only and are kept after a workspace or account is deleted, no longer linked to it or to you.

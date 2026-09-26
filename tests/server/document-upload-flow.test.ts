@@ -491,27 +491,37 @@ describe("reclaiming abandoned uploads", () => {
   });
 });
 
-describe("the sweep is a capability, not a running job", () => {
-  it("is not invoked by any scheduler in this repository", async () => {
-    // Claiming automatic cleanup that nothing invokes would be worse than
-    // stating plainly that it must be wired up. If a scheduler is added FOR
-    // THIS SWEEP, this test should be replaced by one that asserts the schedule
-    // exists.
+describe("the ABANDONED-UPLOAD sweep is a capability, not a running job", () => {
+  it("is still invoked by nothing, unlike the retention sweep beside it", async () => {
+    // Two different sweeps, and only one of them runs on a schedule.
     //
-    // vercel.json now exists (Task 15) — for the bank sync worker only. So the
-    // check is on what is scheduled, not on whether the file exists: no cron
-    // may point at anything that runs the upload sweep, and the only cron is
-    // the bank worker, whose route does not call it (the source scan below).
-    const { existsSync, globSync, readFileSync } = await import("node:fs");
-
-    const crons: { path: string }[] = existsSync("vercel.json") ? (JSON.parse(readFileSync("vercel.json", "utf8")).crons ?? []) : [];
-    expect(crons.map((cron) => cron.path)).toEqual(["/api/bank-connections/worker"]);
-    for (const cron of crons) expect(cron.path).not.toMatch(/document|upload|cleanup|reclaim/i);
+    //   reclaimAbandonedUploads  removes uploads that were never confirmed.
+    //                            Nothing invokes it. That is a storage-growth
+    //                            cost, not a security one, and claiming
+    //                            automatic cleanup that nothing runs would be
+    //                            worse than saying so plainly.
+    //   sweepExpiredIdentityOriginals  removes identity-document originals
+    //                            past their retention window (0058). This one
+    //                            IS scheduled, via /api/documents/retention,
+    //                            because leaving a photograph of somebody's
+    //                            passport in a bucket forever is a security
+    //                            problem rather than a cost one.
+    //
+    // So the assertion is about the FIRST sweep specifically. If a scheduler is
+    // ever added for it, replace this with one asserting the schedule exists.
+    const { globSync, readFileSync } = await import("node:fs");
 
     const sources = globSync("src/**/*.{ts,tsx}").filter((f) => !f.includes("cleanup.ts"));
     const callers = sources.filter((file) => readFileSync(file, "utf8").includes("reclaimAbandonedUploads"));
 
     expect(callers).toEqual([]);
+  });
+
+  it("is not what the document cron runs", async () => {
+    const { readFileSync } = await import("node:fs");
+    const route = readFileSync("src/app/api/documents/retention/route.ts", "utf8");
+    expect(route).toContain("sweepExpiredIdentityOriginals");
+    expect(route).not.toContain("reclaimAbandonedUploads");
   });
 
   it("says so in the module itself", async () => {

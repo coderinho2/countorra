@@ -343,11 +343,29 @@ describe("every document path into the model, not just the explain tool", () => 
 describe("paid OCR is gated on the server, and free local reading is not", () => {
   const actions = read("src/server/documents/intelligence-actions.ts");
   const processing = read("src/server/documents/processing.ts");
+  const resolver = read("src/server/billing/developer-override.ts");
 
   it("decides the plan question once, before anything is processed", () => {
     expect(actions).toContain("allowsPaidOcr");
-    expect(actions).toContain("entitlementsFor");
     expect(actions.indexOf("allowsPaidOcr(client")).toBeLessThan(actions.indexOf("processDocument("));
+  });
+
+  it("resolves that plan from the canonical entitlement model, not from anything a request carries", () => {
+    // The action asks `effectivePlan`, and `effectivePlan` answers from a
+    // server-side subscription read through `entitlementsFor`. Both halves
+    // are asserted, because the chain is what makes the answer trustworthy —
+    // checking only the name in the action would pass for a resolver that
+    // invented a tier.
+    expect(actions).toContain("effectivePlan(client, organizationId, user)");
+    expect(resolver).toContain("getSubscription(client, organizationId)");
+    expect(resolver).toContain("entitlementsFor(subscription)");
+  });
+
+  it("gives a test plan exactly what a purchased plan gives, and no more", () => {
+    // The override indexes the same entitlement table every paid plan uses,
+    // so it cannot grant a capability no plan sells.
+    expect(resolver).toMatch(/const PLANS: Record<PlanTier, PlanEntitlements>/);
+    expect(resolver).toMatch(/free: entitlementsFor\(\{ planId: "free", status: "active" \}\)/);
   });
 
   it("gates the BILLED call rather than the whole action", () => {
@@ -382,5 +400,217 @@ describe("the identity class is closed", () => {
 
   it("treats exactly the four identity classes as identity", () => {
     expect(DOCUMENT_TYPES.filter(isIdentityDocument).sort()).toEqual(["DRIVER_LICENSE", "GOVERNMENT_ID", "PASSPORT", "SSN_DOCUMENT"]);
+  });
+});
+
+describe("the IAM policy grants exactly what the code calls", () => {
+  /**
+   * DEPLOYMENT.md is what somebody pastes into the AWS console, so a drift
+   * between it and the commands this code sends is not a documentation bug —
+   * it is an AccessDeniedException in production, on somebody's document,
+   * after the upload succeeded.
+   *
+   * Compared in both directions: a command with no grant fails at AWS, and a
+   * grant with no command is privilege nobody asked for.
+   */
+  const policyActions = (): string[] => {
+    const doc = read("DEPLOYMENT.md");
+    const block = doc.match(/"Action":\s*\[([^\]]+)\]/);
+    expect(block, "DEPLOYMENT.md no longer contains an IAM policy Action list").not.toBeNull();
+    return [...(block?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1]).sort();
+  };
+
+  const commandsSent = (): string[] => {
+    const provider = read("src/server/documents/textract/provider.ts");
+    // `new XCommand(` is how the adapter sends one. Names only.
+    return [...new Set([...provider.matchAll(/new (\w+)Command\(/g)].map((match) => match[1]))].sort();
+  };
+
+  it("documents a grant for every Textract command the adapter sends", () => {
+    const granted = new Set(policyActions().map((action) => action.replace(/^textract:/, "")));
+    for (const command of commandsSent()) expect([...granted], `no IAM grant for textract:${command}`).toContain(command);
+  });
+
+  it("grants nothing the adapter never calls", () => {
+    const sent = new Set(commandsSent());
+    for (const action of policyActions()) {
+      expect(action.startsWith("textract:"), `${action} is not a Textract action`).toBe(true);
+      expect([...sent], `${action} is granted but never used`).toContain(action.replace(/^textract:/, ""));
+    }
+  });
+
+  it("includes AnalyzeID, which is the identity operation", () => {
+    expect(policyActions()).toContain("textract:AnalyzeID");
+  });
+
+  it("asks for no S3, KMS or IAM permission, because the bytes go in the request", () => {
+    for (const action of policyActions()) expect(action).not.toMatch(/^(s3|kms|iam|sts):/);
+  });
+});
+
+describe("what happens to the document itself, which outlives what was read from it", () => {
+  /**
+   * The normalizer discards a licence's name, address and number — but the
+   * IMAGE those came from is still in Storage, and it holds all of it. So the
+   * retention question for an identity document is really a question about
+   * the file, not about the extracted fields.
+   *
+   * These cases pin what is TRUE TODAY rather than what would be nice. The
+   * reclaim sweep covers abandoned uploads only, and nothing schedules it;
+   * a confirmed document is kept until somebody deletes it. If that changes,
+   * these fail and the claim gets revisited deliberately.
+   */
+
+  it("reclaims only uploads that were never confirmed", () => {
+    const repository = read("src/server/db/repositories/documents.ts");
+    const reclaim = repository.slice(repository.indexOf("export async function listReclaimableDocuments"));
+    // A confirmed document is `ready`; the sweep must not be able to see one.
+    expect(reclaim).toMatch(/\.in\("status", \["pending", "rejected"\]\)/);
+    expect(reclaim.slice(0, 600)).not.toMatch(/"ready"/);
+  });
+
+  it("says plainly that nothing runs the sweep, rather than implying a retention policy exists", () => {
+    const cleanup = read("src/server/documents/cleanup.ts");
+    expect(cleanup).toMatch(/NOTHING CALLS THIS ON A SCHEDULE/);
+  });
+
+  it("deletes the stored bytes before the row that points at them", () => {
+    // Order matters: dropping the row first would strand an identity document
+    // in the bucket with nothing left pointing to it.
+    const cleanup = read("src/server/documents/cleanup.ts");
+    const file = cleanup.indexOf("deleteDocumentFileIfPresent(client, document.storagePath)");
+    const row = cleanup.indexOf("deleteDocument(client, document.id)");
+    expect(file).toBeGreaterThan(-1);
+    expect(row).toBeGreaterThan(file);
+  });
+
+  it("issues only short-lived signed URLs for a stored document, never a public one", () => {
+    const storage = read("src/server/storage/documents.ts");
+    expect(storage).toContain("createSignedUrl");
+    expect(storage).not.toContain("getPublicUrl");
+    // Every signed URL carries an explicit, short expiry.
+    for (const [, ttl] of storage.matchAll(/createSignedUrl\([^,]+,\s*([^)]+)\)/g)) {
+      const seconds = Number(ttl.split("*").reduce((total, part) => total * Number(part.trim()), 1));
+      expect(Number.isFinite(seconds) && seconds <= 300, `a signed URL lasts ${ttl}`).toBe(true);
+    }
+  });
+});
+
+describe("the live AnalyzeID test cannot print what it reads", () => {
+  /**
+   * That file is the only thing in the repository that ever holds a real
+   * passport or licence. Its safety is a property of how it is WRITTEN, so it
+   * is asserted rather than trusted — including against a future edit that
+   * adds "just one" diagnostic line.
+   */
+  const LIVE = "tests/textract-live/textract-analyzeid-live.test.ts";
+
+  it("prints no field value, and not the file path either", () => {
+    for (const [line] of read(LIVE).matchAll(/^\s*say\(.*$/gm)) {
+      expect(line, "a print line reaches document content").not.toMatch(/\.text|rawValue|normalizedText|\.value|imagePath|TEXTRACT_TEST_ID_IMAGE/);
+    }
+  });
+
+  it("commits no identity fixture of its own", () => {
+    const live = read(LIVE);
+    expect(live).not.toMatch(/base64/i);
+    expect(live).toMatch(/process\.env\.TEXTRACT_TEST_ID_IMAGE/);
+  });
+
+  it("writes nothing to disk", () => {
+    const live = read(LIVE);
+    expect(live).not.toMatch(/writeFileSync|appendFileSync|createWriteStream|copyFileSync/);
+  });
+
+  it("skips rather than fails when no document is supplied", () => {
+    expect(read(LIVE)).toMatch(/describe\.runIf\(runLive\)/);
+  });
+});
+
+describe("an identity document's original does not outlive its purpose", () => {
+  /**
+   * The gap these close: the normalizer discards a licence's name, address
+   * and number, and the IMAGE those came from held all of it with no expiry
+   * at all. Migration 0058 gives an identity original seven days; these cases
+   * assert the parts of that which live in application code, and
+   * tests/rls/identity-document-retention.test.ts proves the database half
+   * against real Postgres.
+   */
+
+  it("expires identity classes and only identity classes", async () => {
+    const { originalExpiresAfterReading } = await import("@/domain/documents/retention");
+    for (const type of DOCUMENT_TYPES) {
+      // The two definitions must not drift: anything the product treats as
+      // identity is what expires, with no second list to keep in step.
+      expect(originalExpiresAfterReading(type), type).toBe(isIdentityDocument(type));
+    }
+  });
+
+  it("uses the same window in the trigger and in the product", async () => {
+    const { IDENTITY_ORIGINAL_RETENTION_DAYS } = await import("@/domain/documents/retention");
+    const migration = read("supabase/migrations/0058_identity_document_retention.sql");
+    expect(migration).toContain(`now() + interval '${IDENTITY_ORIGINAL_RETENTION_DAYS} days'`);
+  });
+
+  it("refuses a signed URL once the original is gone, rather than minting one that 404s", () => {
+    const actions = read("src/server/documents/actions.ts");
+    const url = actions.slice(actions.indexOf("export async function getDocumentUrlAction"));
+    // Authorization first, then visibility, then retention — and the retention
+    // check is BEFORE the URL is created.
+    expect(url.indexOf("requireOrgMembership")).toBeLessThan(url.indexOf("hasOriginal"));
+    expect(url.indexOf("hasOriginal")).toBeLessThan(url.indexOf("getDocumentDownloadUrl"));
+  });
+
+  it("does not send an expired document to a billed reader", () => {
+    const processing = read("src/server/documents/processing.ts");
+    // Both entry points: the user's request and a scheduler's queued job.
+    expect(processing.match(/hasOriginal\(document\)/g) ?? []).toHaveLength(2);
+    // And before the provider is resolved, so no call is made and no attempt
+    // is spent rediscovering a permanent fact. Measured inside the function,
+    // not across the file, where the import block names both already.
+    const body = processing.slice(processing.indexOf("export async function processDocument"));
+    expect(body.indexOf("hasOriginal(document)")).toBeLessThan(body.indexOf("resolveProvider("));
+  });
+
+  it("can still delete a document whose bytes the sweep already removed", () => {
+    const actions = read("src/server/documents/actions.ts");
+    const remove = actions.slice(actions.indexOf("export async function deleteDocumentAction"));
+    // `deleteDocumentFile` throws on a missing object, which would leave a
+    // document nobody could remove.
+    expect(remove).toContain("deleteDocumentFileIfPresent");
+    expect(remove.slice(0, remove.indexOf("export async function getDocumentUrlAction"))).not.toMatch(/deleteDocumentFile\(/);
+  });
+
+  it("scopes every delete to the organization the row came from", () => {
+    const sweep = read("src/server/documents/retention.ts");
+    // The organization travels with each row and is passed back to the mark,
+    // which matches on both ids. Nothing here holds a single shared id.
+    expect(sweep).toContain("markDocumentOriginalRemoved(client, document.organizationId, document.documentId)");
+  });
+
+  it("removes the bytes before recording that they are gone", () => {
+    const sweep = read("src/server/documents/retention.ts");
+    const body = sweep.slice(sweep.indexOf("export async function sweepExpiredIdentityOriginals"));
+    expect(body.indexOf("deleteDocumentFileIfPresent")).toBeLessThan(body.indexOf("markDocumentOriginalRemoved"));
+  });
+
+  it("is reachable only with the deployment secret, and only through its own route", () => {
+    const route = read("src/app/api/documents/retention/route.ts");
+    expect(route).toContain("timingSafeEqual");
+    expect(route).toContain("CRON_SECRET");
+    // 404 rather than 401 when unconfigured: a caller learns nothing either way.
+    expect(route).toMatch(/if \(!secret\) return Response\.json\(\{ error: "not_configured" \}, \{ status: 404 \}\);/);
+    // No session, and no organization from the request.
+    expect(route).not.toMatch(/requireOrgMembership|organizationId/);
+  });
+
+  it("names no document, organization or path in what the sweep reports", () => {
+    const sweep = read("src/server/documents/retention.ts");
+    const route = read("src/app/api/documents/retention/route.ts");
+    for (const [name, source] of [["sweep", sweep], ["route", route]] as const) {
+      for (const [, detail] of source.matchAll(/detail: \{([^}]*)\}/g)) {
+        expect(detail, `${name} reports something identifying`).not.toMatch(/storagePath|originalFilename|organizationId|documentId/);
+      }
+    }
   });
 });

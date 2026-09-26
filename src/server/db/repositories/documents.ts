@@ -16,6 +16,11 @@ export interface AppDocument {
   sizeBytes: number | null;
   status: DocumentRow["status"];
   createdAt: string;
+  /** 0058. When the ORIGINAL FILE expires; null for every financial document. */
+  retentionExpiresAt: string | null;
+  /** 0058. Set once the retention sweep removed the bytes. The row, the
+   *  filename and the extraction all survive — only the file is gone. */
+  originalRemovedAt: string | null;
 }
 
 function toDocument(row: DocumentRow): AppDocument {
@@ -30,7 +35,14 @@ function toDocument(row: DocumentRow): AppDocument {
     sizeBytes: row.size_bytes,
     status: row.status,
     createdAt: row.created_at,
+    retentionExpiresAt: row.retention_expires_at ?? null,
+    originalRemovedAt: row.original_removed_at ?? null,
   };
+}
+
+/** Whether this document still has bytes behind it. */
+export function hasOriginal(document: AppDocument): boolean {
+  return document.originalRemovedAt === null;
 }
 
 /**
@@ -195,4 +207,39 @@ export async function listReclaimableDocuments(
 export async function deleteDocument(client: Client, documentId: string): Promise<void> {
   const { error } = await client.from("documents").delete().eq("id", documentId);
   if (error) throw error;
+}
+
+// ── Retention (0058) ────────────────────────────────────────────────────
+
+export interface ExpiredOriginal {
+  documentId: string;
+  organizationId: string;
+  storagePath: string;
+}
+
+/**
+ * Identity-document originals whose retention window has passed.
+ *
+ * Through the SQL function rather than a query, so the "due and not already
+ * removed" rule is written once, in the database, and the ceiling on how much
+ * one call may return cannot be raised by a caller. Needs the admin client:
+ * the sweep acts for every organization and belongs to no member.
+ */
+export async function listExpiredDocumentOriginals(client: Client, limit: number): Promise<ExpiredOriginal[]> {
+  const { data, error } = await client.rpc("documents_expired_originals", { p_limit: limit });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({ documentId: row.document_id, organizationId: row.organization_id, storagePath: row.storage_path }));
+}
+
+/**
+ * Records that one document's bytes are gone.
+ *
+ * The organization is passed back and matched, so a document id that somehow
+ * belonged to another workspace marks nothing at all. False means the row was
+ * already marked — the normal outcome of a re-run, not an error.
+ */
+export async function markDocumentOriginalRemoved(client: Client, organizationId: string, documentId: string): Promise<boolean> {
+  const { data, error } = await client.rpc("document_original_removed", { p_organization_id: organizationId, p_document_id: documentId });
+  if (error) throw error;
+  return data === true;
 }

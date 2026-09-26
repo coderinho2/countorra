@@ -10,7 +10,8 @@ import { applyStructured, shouldRunStructured } from "@/domain/documents/intelli
 import { ocrProvider } from "./providers";
 import { MAX_PROCESSING_ATTEMPTS, currentIdentity, decideProcessingRequest, idempotencyKeyFor } from "@/domain/documents/intelligence/state-machine";
 import { FAILURE_MESSAGES, isRetryableFailure, type ExtractionStatus, type FailureCategory, type ProcessingJobStatus } from "@/domain/documents/intelligence/types";
-import { getVisibleDocument, type AppDocument } from "@/server/db/repositories/documents";
+import { getVisibleDocument, hasOriginal, type AppDocument } from "@/server/db/repositories/documents";
+import { ORIGINAL_EXPIRED_MESSAGE } from "@/domain/documents/retention";
 import { claimJob, failJob, insertQueuedJob, listJobsForDocument, recordExtraction, requeueJob, type ProcessingJob } from "@/server/db/repositories/document-intelligence";
 import { reportError, reportEvent } from "@/lib/observability";
 
@@ -99,6 +100,12 @@ export async function processDocument(deps: ProcessingDependencies, input: { org
     return { kind: "unavailable", message: "Document not found." };
   }
 
+  // Retention (0058). The bytes of an expired identity original are gone, so
+  // there is nothing to read. Refused HERE rather than at the download, which
+  // would record DOCUMENT_UNAVAILABLE and spend all three attempts
+  // rediscovering a permanent fact. No job, no provider call, no bill.
+  if (!hasOriginal(document)) return { kind: "unavailable", message: ORIGINAL_EXPIRED_MESSAGE };
+
   const availability = resolveProvider(document.mimeType as VerifiedMimeType, deps.providers);
   if (!availability.available) return { kind: "not_configured", message: availability.message };
   const { provider } = availability;
@@ -179,6 +186,9 @@ export async function runQueuedJob(deps: Omit<ProcessingDependencies, "client"> 
   const reader = deps.client ?? deps.admin;
   const document = await getVisibleDocument(reader, job.documentId);
   if (!document || document.organizationId !== job.organizationId) return { kind: "unavailable", message: "Document not found." };
+  // As above: a queued job whose document outlived its original has nothing
+  // to read, and a scheduler must not spend attempts discovering that.
+  if (!hasOriginal(document)) return { kind: "unavailable", message: ORIGINAL_EXPIRED_MESSAGE };
   const availability = resolveProvider(document.mimeType as VerifiedMimeType, deps.providers);
   if (!availability.available) return { kind: "not_configured", message: availability.message };
   if (availability.provider.id !== job.provider || availability.provider.version !== job.providerVersion) {

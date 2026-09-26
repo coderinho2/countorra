@@ -1,6 +1,6 @@
 import "server-only";
 import { TextractClient } from "@aws-sdk/client-textract";
-import { serverEnv } from "@/lib/server-env";
+import { textractEnv } from "@/lib/server-env";
 
 /**
  * The Amazon Textract client, and the one place that decides whether this
@@ -57,11 +57,19 @@ export interface TextractConfiguration {
  *
  * Never throws: an unconfigured deployment is a supported state, and the
  * product says "no reader is configured" rather than failing an upload.
+ *
+ * Reads `textractEnv()` — the AWS three — and NOT the whole server
+ * environment. The distinction is the difference between a true answer and a
+ * misleading one: this function reports "no reader" for anything it cannot
+ * read, so while it read every secret, a missing Supabase or Anthropic key
+ * was indistinguishable here from an absent AWS region. The only failure that
+ * can now reach the catch is an AWS one — an absent region, or half a key
+ * pair, which `assertTextractConfigurationIsWhole` still refuses.
  */
 export function textractConfiguration(): TextractConfiguration | null {
-  let env: ReturnType<typeof serverEnv>;
+  let env: ReturnType<typeof textractEnv>;
   try {
-    env = serverEnv();
+    env = textractEnv();
   } catch {
     return null;
   }
@@ -77,7 +85,7 @@ export function textractClient(): TextractClient {
   if (cached) return cached;
   const configuration = textractConfiguration();
   if (!configuration) throw new Error("Textract is not configured for this deployment.");
-  const env = serverEnv();
+  const env = textractEnv();
 
   cached = new TextractClient({
     region: configuration.region,

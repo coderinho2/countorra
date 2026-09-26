@@ -132,8 +132,12 @@ export function DocumentsList({
                     <DropdownMenuItem className="text-[14px]" asChild>
                       <Link href={`/app/${organizationId}/documents/${doc.id}`}>Details</Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="text-[14px]" onSelect={() => view(doc.id)}>
-                      Open file
+                    {/* An identity document's original is deleted seven days
+                        after it is read (0058). The action is removed rather
+                        than left to fail: offering a button that throws is
+                        worse than saying the file is gone. */}
+                    <DropdownMenuItem className="text-[14px]" disabled={doc.originalRemovedAt !== null} onSelect={() => view(doc.id)}>
+                      {doc.originalRemovedAt === null ? "Open file" : "File expired"}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     {/* Destructive actions live behind a menu and are tinted,

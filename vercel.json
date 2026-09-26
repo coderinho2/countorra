@@ -4,6 +4,10 @@
     {
       "path": "/api/bank-connections/worker",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/documents/retention",
+      "schedule": "0 7 * * *"
     }
   ]
 }

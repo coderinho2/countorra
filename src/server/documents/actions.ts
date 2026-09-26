@@ -6,7 +6,6 @@ import { requireOrgMembership } from "@/server/auth/session";
 import { can } from "@/domain/organizations/permissions";
 import {
   createSignedUploadTarget,
-  deleteDocumentFile,
   deleteDocumentFileIfPresent,
   getDocumentDownloadUrl,
   observeUploadedObject,
@@ -16,6 +15,7 @@ import {
   deleteDocument,
   getDocument,
   getVisibleDocument,
+  hasOriginal,
   markDocumentRejected,
   markDocumentUploaded,
 } from "@/server/db/repositories/documents";
@@ -23,6 +23,7 @@ import { recordAuditEvent, AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import { confirmDocumentUploadSchema, uploadDocumentSchema } from "@/validation/schemas/document";
 import { storageKeyFor, isKeyOwnedBy } from "@/domain/documents/storage-key";
 import { decideConfirmation, evaluateUpload } from "@/domain/documents/upload-lifecycle";
+import { ORIGINAL_EXPIRED_MESSAGE } from "@/domain/documents/retention";
 import type { VerifiedMimeType } from "@/domain/documents/file-signature";
 import { enforceRateLimit } from "@/server/security/rate-limit";
 import { reportError } from "@/lib/observability";
@@ -200,7 +201,10 @@ export async function deleteDocumentAction(organizationId: string, documentId: s
   const document = await getDocument(client, documentId);
   if (!document || document.organizationId !== organizationId) throw new Error("Document not found.");
 
-  await deleteDocumentFile(client, document.storagePath);
+  // `IfPresent`: the retention sweep may already have removed the bytes
+  // (0058), and refusing to delete the row because the file it points at is
+  // gone would leave a document nobody can remove.
+  await deleteDocumentFileIfPresent(client, document.storagePath);
   await deleteDocument(client, documentId);
   await recordAuditEvent(client, { organizationId, action: AUDIT_ACTIONS.documentDeleted, resourceType: "document", resourceId: documentId });
   revalidatePath(`/app/${organizationId}/documents`);
@@ -214,5 +218,10 @@ export async function getDocumentUrlAction(organizationId: string, documentId: s
   // exact bytes verification refused.
   const document = await getVisibleDocument(client, documentId);
   if (!document || document.organizationId !== organizationId) throw new Error("Document not found.");
+  // Retention (0058). An expired identity original has no bytes behind it, so
+  // a signed URL would 404 — and, more to the point, minting one at all is the
+  // shape of a bypass. The row and the extraction are still shown; only the
+  // file is gone, and the message says so rather than reading as a fault.
+  if (!hasOriginal(document)) throw new Error(ORIGINAL_EXPIRED_MESSAGE);
   return getDocumentDownloadUrl(client, document.storagePath);
 }

@@ -47,7 +47,11 @@ export interface JurisdictionResult {
 
 export interface RefundAssessment {
   status: RefundStatus;
-  /** Positive means a refund, negative a balance due. Null when unknown. */
+  /**
+   * The MAGNITUDE, always positive. `status` carries the direction —
+   * REFUND_EXPECTED or BALANCE_DUE — and a caller that reads this as a signed
+   * number turns a bill into a refund. Null when neither can be stated.
+   */
   amountMinor: number | null;
   explanation: string;
 }
