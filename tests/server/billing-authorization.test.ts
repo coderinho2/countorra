@@ -42,6 +42,19 @@ const state = vi.hoisted(() => {
     portalCalls: [] as Record<string, unknown>[],
     customersCreated: [] as Record<string, unknown>[],
     boundCustomers: [] as { organizationId: string; customerId: string }[],
+    /** The `subscriptions.stripe_customer_id` column, modelled so the real
+     *  write guards can be exercised: `bind_stripe_customer` writes only when
+     *  it is null, and the replacement update only while it still holds the
+     *  stale id. */
+    storedCustomerId: null as string | null,
+    /** What Stripe says when the stored customer is retrieved. */
+    retrieve: "ok" as "ok" | "missing" | "deleted" | "rate_limited",
+    /** Every id Stripe was asked to retrieve, so "was it verified?" is testable. */
+    customerRetrieves: [] as string[],
+    /** Every replacement update, with the filters it was guarded by. */
+    customerUpdates: [] as { values: Record<string, unknown>; filters: Record<string, unknown> }[],
+    /** Simulates another request winning the race to replace the stale id. */
+    onReplace: null as (() => void) | null,
     auditActions: [] as string[],
   };
 });
@@ -79,6 +92,8 @@ vi.mock("@/server/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: async (name: string, args: Record<string, string>) => {
       if (name === "bind_stripe_customer") {
+        // The real function's WHERE clause: writes only when still null.
+        if (state.storedCustomerId === null) state.storedCustomerId = args.p_stripe_customer_id;
         state.boundCustomers.push({ organizationId: args.p_organization_id, customerId: args.p_stripe_customer_id });
       }
       return { error: null };
@@ -91,16 +106,53 @@ vi.mock("@/server/supabase/admin", () => ({
               state.afterCreate === "deleted"
                 ? null
                 : {
-                    stripe_customer_id: state.boundCustomers.at(-1)?.customerId ?? null,
+                    stripe_customer_id: state.storedCustomerId,
                     deletion_locked_at: state.afterCreate === "locked" ? new Date().toISOString() : null,
                   },
             error: null,
           }),
         }),
       }),
+      /** `update(...).eq(...).eq(...)`, resolved when awaited. The filters are
+       *  applied, not ignored: that is the guard under test. */
+      update: (values: Record<string, unknown>) => {
+        const filters: Record<string, unknown> = {};
+        const chain = {
+          eq(column: string, value: unknown) {
+            filters[column] = value;
+            return chain;
+          },
+          then(resolve: (result: { error: null }) => void) {
+            state.onReplace?.();
+            state.customerUpdates.push({ values, filters: { ...filters } });
+            // Only replaces while the column still names the stale id.
+            if (filters.stripe_customer_id === state.storedCustomerId) {
+              state.storedCustomerId = values.stripe_customer_id as string;
+            }
+            resolve({ error: null });
+          },
+        };
+        return chain;
+      },
     }),
   }),
 }));
+
+/** Shaped like the Stripe SDK's error for an id that does not exist for this
+ *  key — which is what a test-mode customer looks like to a live key. */
+function stripeResourceMissing(): Error {
+  return Object.assign(new Error("No such customer; a similar object exists in test mode, but a live mode key was used to make this request."), {
+    type: "StripeInvalidRequestError",
+    code: "resource_missing",
+    statusCode: 404,
+    param: "customer",
+  });
+}
+
+/** A transient failure. Must NEVER be read as "missing". */
+function stripeRateLimited(): Error {
+  return Object.assign(new Error("Too many requests"), { type: "StripeRateLimitError", code: "rate_limit", statusCode: 429 });
+}
 
 vi.mock("@/server/db/repositories/organizations", () => ({
   getOrganization: async (_c: unknown, id: string) => ({ id, name: "Acme", entityType: "personal", country: "US", baseCurrency: "USD" }),
@@ -150,7 +202,16 @@ vi.mock("@/server/billing/stripe-client", () => ({
           customers: {
             create: async (params: Record<string, unknown>) => {
               state.customersCreated.push(params);
-              return { id: "cus_created" };
+              // First is `cus_created`; later ones are distinct, so a
+              // replacement can be told apart from the original.
+              return { id: state.customersCreated.length === 1 ? "cus_created" : `cus_created_${state.customersCreated.length}` };
+            },
+            retrieve: async (id: string) => {
+              state.customerRetrieves.push(id);
+              if (state.retrieve === "missing") throw stripeResourceMissing();
+              if (state.retrieve === "rate_limited") throw stripeRateLimited();
+              if (state.retrieve === "deleted") return { id, deleted: true };
+              return { id };
             },
           },
         }
@@ -181,6 +242,11 @@ beforeEach(() => {
   state.portalCalls = [];
   state.customersCreated = [];
   state.boundCustomers = [];
+  state.storedCustomerId = null;
+  state.retrieve = "ok";
+  state.customerRetrieves = [];
+  state.customerUpdates = [];
+  state.onReplace = null;
   state.auditActions = [];
   state.afterCreate = "unchanged";
   state.expiredSessions = [];
@@ -336,6 +402,156 @@ describe("the Stripe customer", () => {
   it("carries the organization id so an orphan customer can be traced", async () => {
     await createCheckoutSession({ organizationId: ORG, plan: "premium" });
     expect(state.customersCreated[0].metadata).toEqual({ organization_id: ORG });
+  });
+});
+
+describe("a stored Stripe customer from the other mode", () => {
+  /**
+   * WHY THIS EXISTS. A `cus_…` belongs to ONE Stripe mode. The id is stored on
+   * the organization's subscription row, and that row survives the switch from
+   * test keys to live ones — so on the first live Checkout the stored id is
+   * handed to a live key, Stripe answers `resource_missing`, and without
+   * recovery it would answer that forever for that organization.
+   *
+   * This is not hypothetical: one real workspace held a test-mode customer id
+   * when Countorra was being prepared for live Stripe.
+   */
+
+  it("(a) reuses a VALID existing customer, and creates nothing", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_live_valid" };
+    state.storedCustomerId = "cus_live_valid";
+    state.retrieve = "ok";
+
+    const result = await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(result.url).toBeTruthy();
+    // Verified, then reused as-is.
+    expect(state.customerRetrieves).toEqual(["cus_live_valid"]);
+    expect(state.customersCreated).toEqual([]);
+    expect(state.customerUpdates).toEqual([]);
+    expect(state.checkoutCalls[0].customer).toBe("cus_live_valid");
+    expect(state.storedCustomerId).toBe("cus_live_valid");
+  });
+
+  it("(b) replaces a customer that returns resource_missing, and checks out with the replacement", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_from_test_mode" };
+    state.storedCustomerId = "cus_from_test_mode";
+    state.retrieve = "missing";
+
+    const result = await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(result.error).toBeUndefined();
+    expect(result.url).toBeTruthy();
+    expect(state.customerRetrieves).toEqual(["cus_from_test_mode"]);
+    // Exactly one replacement, created in the CURRENT mode.
+    expect(state.customersCreated).toHaveLength(1);
+    expect(state.customersCreated[0].metadata).toEqual({ organization_id: ORG });
+    // The row now names the replacement, and Checkout used it.
+    expect(state.storedCustomerId).toBe("cus_created");
+    expect(state.checkoutCalls[0].customer).toBe("cus_created");
+  });
+
+  it("(b) writes the replacement through a guard naming the stale id, not a blind overwrite", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_from_test_mode" };
+    state.storedCustomerId = "cus_from_test_mode";
+    state.retrieve = "missing";
+
+    await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(state.customerUpdates).toHaveLength(1);
+    const [update] = state.customerUpdates;
+    expect(update.values).toMatchObject({ stripe_customer_id: "cus_created", external_provider: "stripe" });
+    // Scoped to this organization AND to the id just proven unusable, so a
+    // concurrent replacement cannot be clobbered.
+    expect(update.filters).toEqual({ organization_id: ORG, stripe_customer_id: "cus_from_test_mode" });
+  });
+
+  it("(b) does not use bind_stripe_customer, which cannot replace a non-null id", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_from_test_mode" };
+    state.storedCustomerId = "cus_from_test_mode";
+    state.retrieve = "missing";
+
+    await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    // bind's WHERE clause is `stripe_customer_id is null`. Calling it here
+    // would silently do nothing and Checkout would use an unbound customer.
+    expect(state.boundCustomers).toEqual([]);
+  });
+
+  it("(b) also replaces a customer that was DELETED in the Dashboard", async () => {
+    // Stripe raises no error for this one: retrieve succeeds with
+    // `deleted: true`, and Checkout then refuses the customer.
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_deleted" };
+    state.storedCustomerId = "cus_deleted";
+    state.retrieve = "deleted";
+
+    const result = await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(result.url).toBeTruthy();
+    expect(state.customersCreated).toHaveLength(1);
+    expect(state.storedCustomerId).toBe("cus_created");
+  });
+
+  it("(c) never reuses the stale id: it reaches neither Checkout nor the stored row", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_from_test_mode" };
+    state.storedCustomerId = "cus_from_test_mode";
+    state.retrieve = "missing";
+
+    await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(state.checkoutCalls[0].customer).not.toBe("cus_from_test_mode");
+    expect(state.storedCustomerId).not.toBe("cus_from_test_mode");
+    // And nothing anywhere asked Stripe to delete it — the old customer may
+    // hold real billing history in the mode it belongs to.
+    expect(state.customersCreated).toHaveLength(1);
+  });
+
+  it("(c) a TRANSIENT Stripe failure creates no customer at all", async () => {
+    // The dangerous misreading: treating any error as "missing" would mint a
+    // new customer on every retry and multiply customers for one workspace.
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_live_valid" };
+    state.storedCustomerId = "cus_live_valid";
+    state.retrieve = "rate_limited";
+
+    const result = await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(result.error).toBeTruthy();
+    expect(result.url).toBeUndefined();
+    expect(state.customersCreated).toEqual([]);
+    expect(state.customerUpdates).toEqual([]);
+    // The stored id is untouched, so a later attempt still finds it.
+    expect(state.storedCustomerId).toBe("cus_live_valid");
+    expect(state.checkoutCalls).toEqual([]);
+  });
+
+  it("(c) a workspace with no customer yet is unaffected: nothing is retrieved", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: null };
+    state.storedCustomerId = null;
+
+    await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    // No id to verify, so no retrieve — and the original bind path is used.
+    expect(state.customerRetrieves).toEqual([]);
+    expect(state.boundCustomers).toEqual([{ organizationId: ORG, customerId: "cus_created" }]);
+    expect(state.customerUpdates).toEqual([]);
+  });
+
+  it("(b) loses a replacement race gracefully: it adopts the winner's customer", async () => {
+    state.subscription = { planId: "free", status: "active", stripeCustomerId: "cus_from_test_mode" };
+    state.storedCustomerId = "cus_from_test_mode";
+    state.retrieve = "missing";
+    // Another request replaces the stale id first, so this one's guard misses.
+    state.onReplace = () => {
+      state.storedCustomerId = "cus_winner";
+      state.onReplace = null;
+    };
+
+    const result = await createCheckoutSession({ organizationId: ORG, plan: "premium" });
+
+    expect(result.url).toBeTruthy();
+    // The winner's customer stands, and Checkout uses it rather than ours.
+    expect(state.storedCustomerId).toBe("cus_winner");
+    expect(state.checkoutCalls[0].customer).toBe("cus_winner");
   });
 });
 

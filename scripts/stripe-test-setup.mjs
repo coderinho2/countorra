@@ -40,9 +40,26 @@ import { pathToFileURL } from "node:url";
  *  (asserted by tests/config/stripe-test-setup.test.ts). */
 export const STRIPE_API_VERSION = "2026-08-26.dahlia";
 
+/**
+ * `taxCode` is NOT decoration. Stripe's Managed Payments (enabled by default on
+ * this account) makes Stripe the merchant of record, and it refuses a Checkout
+ * line item whose product has no tax code:
+ *
+ *   Invalid line_items[0]: the product tax code is missing.
+ *
+ * So a product created without one cannot be bought — in test mode or in live
+ * mode. These two codes are Stripe's own, and are the ones the LIVE products
+ * carry, so test mode mirrors production rather than diverging from it:
+ *
+ *   txcd_10103000  Software as a service (SaaS) - personal use
+ *   txcd_10103001  Software as a service (SaaS) - business use
+ *
+ * Countorra is personal-only at launch, hence personal use for Premium; the
+ * Business tier is a Stripe tier for business use.
+ */
 export const PLANS = [
-  { plan: "premium", envVar: "STRIPE_PREMIUM_PRICE_ID", lookupKey: "countorra_premium_monthly", productName: "Countorra Premium", unitAmount: 1_900 },
-  { plan: "business", envVar: "STRIPE_BUSINESS_PRICE_ID", lookupKey: "countorra_business_monthly", productName: "Countorra Business", unitAmount: 4_900 },
+  { plan: "premium", envVar: "STRIPE_PREMIUM_PRICE_ID", lookupKey: "countorra_premium_monthly", productName: "Countorra Premium", unitAmount: 1_900, taxCode: "txcd_10103000" },
+  { plan: "business", envVar: "STRIPE_BUSINESS_PRICE_ID", lookupKey: "countorra_business_monthly", productName: "Countorra Business", unitAmount: 4_900, taxCode: "txcd_10103001" },
 ];
 
 export const STRIPE_VARS = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PREMIUM_PRICE_ID", "STRIPE_BUSINESS_PRICE_ID"];
@@ -203,7 +220,29 @@ function priceProblems(price, spec) {
   if (price.unit_amount !== spec.unitAmount) problems.push(`is not ${spec.unitAmount / 100} USD`);
   if (price.type !== "recurring" || price.recurring?.interval !== "month" || price.recurring?.interval_count !== 1) problems.push("is not monthly recurring");
   if (price.recurring?.usage_type !== "licensed") problems.push("is not licensed usage");
+  // Without a tax code Managed Payments refuses the line item, so the price
+  // exists but cannot be bought. Reported as a problem with the price because
+  // that is the thing the caller configured.
+  const product = typeof price.product === "object" && price.product !== null ? price.product : null;
+  if (product && !product.tax_code) problems.push("product has no tax_code (Managed Payments refuses it)");
   return problems;
+}
+
+/**
+ * Gives an EXISTING product the tax code it should have had.
+ *
+ * The create path above sets it, but these products predate that and creation
+ * never runs again once a price with the lookup key exists — so without this,
+ * `setup` could not repair the account it is meant to set up. Narrow on
+ * purpose: only ever fills a MISSING code, never replaces a different one a
+ * human may have chosen deliberately.
+ */
+async function ensureProductTaxCode(stripe, price, spec) {
+  const product = typeof price.product === "object" && price.product !== null ? price.product : null;
+  if (!product || product.livemode) return null;
+  if (product.tax_code) return null;
+  await stripe.products.update(product.id, { tax_code: spec.taxCode });
+  return product.id;
 }
 
 async function main(mode) {
@@ -265,7 +304,7 @@ async function main(mode) {
   for (const spec of PLANS) {
     let price = await findPrice(stripe, spec);
     if (!price && mode === "setup") {
-      const product = await stripe.products.create({ name: spec.productName, metadata: { countorra_plan: spec.plan } });
+      const product = await stripe.products.create({ name: spec.productName, tax_code: spec.taxCode, metadata: { countorra_plan: spec.plan } });
       price = await stripe.prices.create({
         product: product.id,
         currency: "usd",
@@ -275,6 +314,13 @@ async function main(mode) {
         metadata: { countorra_plan: spec.plan },
       });
       price = await findPrice(stripe, spec);
+    }
+    if (price && mode === "setup") {
+      const repaired = await ensureProductTaxCode(stripe, price, spec);
+      if (repaired) {
+        report.push(`  ${spec.productName}: set tax_code ${spec.taxCode} on existing product ${repaired}`);
+        price = await findPrice(stripe, spec);
+      }
     }
     const problems = price ? priceProblems(price, spec) : ["does not exist (run `setup`)"];
     const configured = value(spec.envVar);

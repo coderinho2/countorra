@@ -236,6 +236,77 @@ export async function createBillingPortalSession(input: { organizationId: string
 }
 
 /**
+ * Whether a Stripe error means "this object does not exist for the key that
+ * asked".
+ *
+ * `resource_missing` is the only code that may lead to replacing a stored
+ * customer. Everything else — a rate limit, a network failure, a revoked key,
+ * a permission the restricted key lacks — must propagate, because treating
+ * those as "missing" would create a NEW customer on every retry and quietly
+ * multiply customers for one organization.
+ */
+function isResourceMissing(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const e = error as { type?: unknown; code?: unknown; statusCode?: unknown };
+  return typeof e.type === "string" && e.type.startsWith("Stripe") && e.code === "resource_missing" && e.statusCode === 404;
+}
+
+/**
+ * Whether the stored customer can actually be used by the key in hand.
+ *
+ * THE PROBLEM THIS SOLVES. A Stripe customer id belongs to ONE mode. A
+ * `cus_…` created in test mode does not exist for a live key, and Stripe says
+ * so with `resource_missing` ("a similar object exists in test mode, but a
+ * live mode key was used"). Countorra stores that id on the organization's
+ * subscription row, and that row survives the switch from test keys to live
+ * ones. So on the first live Checkout the stored id is handed to Stripe, the
+ * call fails, and — because the id is never re-derived — it fails FOREVER for
+ * that organization, with no path out from the product.
+ *
+ * Checked with a retrieve rather than discovered from a failed Checkout: one
+ * extra call on a rare, human-initiated action, in exchange for the failure
+ * being impossible rather than recovered from. It also catches the other
+ * unusable case, which no error reports at all — a DELETED customer retrieves
+ * successfully with `deleted: true`, and Checkout then refuses it.
+ */
+async function storedCustomerIsUsable(stripe: NonNullable<ReturnType<typeof stripeClient>>, customerId: string): Promise<boolean> {
+  try {
+    const customer = await stripe.customers.retrieve(customerId);
+    return !(customer as { deleted?: boolean }).deleted;
+  } catch (error) {
+    if (isResourceMissing(error)) return false;
+    throw error;
+  }
+}
+
+/**
+ * Repoints an organization at a replacement customer, but only while the row
+ * still names the one just proven unusable.
+ *
+ * `bind_stripe_customer` cannot do this: it writes only when the column is
+ * NULL, which is exactly the guard that stops a concurrent Checkout from
+ * repointing an organization. So the replacement is a service-role update
+ * with its own narrower guard — `stripe_customer_id = <the stale id>` — which
+ * keeps the same property: two requests racing to replace the same stale id
+ * produce one winner, and the loser adopts the winner's customer instead of
+ * overwriting it.
+ *
+ * Returns the id the row ends up holding.
+ */
+async function replaceStoredCustomer(params: { organizationId: string; staleCustomerId: string; replacementCustomerId: string }): Promise<string> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("subscriptions")
+    .update({ stripe_customer_id: params.replacementCustomerId, external_provider: "stripe" })
+    .eq("organization_id", params.organizationId)
+    .eq("stripe_customer_id", params.staleCustomerId);
+  if (error) throw error;
+
+  const { data } = await admin.from("subscriptions").select("stripe_customer_id").eq("organization_id", params.organizationId).maybeSingle();
+  return data?.stripe_customer_id ?? params.replacementCustomerId;
+}
+
+/**
  * Finds or creates the organization's Stripe Customer, and records it.
  *
  * Created BEFORE Checkout rather than letting Stripe create one implicitly,
@@ -246,6 +317,12 @@ export async function createBillingPortalSession(input: { organizationId: string
  *
  * `bind_stripe_customer` writes only when the column is still null, so a
  * concurrent second Checkout cannot repoint an organization at a new customer.
+ *
+ * A STORED ID IS VERIFIED BEFORE IT IS TRUSTED — see `storedCustomerIsUsable`.
+ * An id from the other Stripe mode, or a customer deleted in the Dashboard, is
+ * replaced with a fresh one for the current mode. The old customer is left
+ * alone in Stripe: it may hold real billing history for whoever owns that
+ * mode, so it is dereferenced, never deleted.
  */
 async function ensureStripeCustomer(params: {
   organizationId: string;
@@ -253,16 +330,31 @@ async function ensureStripeCustomer(params: {
   email: string | undefined;
   existingCustomerId: string | null;
 }): Promise<string> {
-  if (params.existingCustomerId) return params.existingCustomerId;
-
   const stripe = stripeClient();
   if (!stripe) throw new Error("Stripe is not configured");
+
+  let staleCustomerId: string | null = null;
+  if (params.existingCustomerId) {
+    if (await storedCustomerIsUsable(stripe, params.existingCustomerId)) return params.existingCustomerId;
+    staleCustomerId = params.existingCustomerId;
+    // Names no customer id: an id is not a secret, but this line ends up in
+    // logs and the organization is enough to find the row.
+    reportEvent("billing.stored_customer_unusable", { scope: "billing", organizationId: params.organizationId }, "warning");
+  }
 
   const customer = await stripe.customers.create({
     name: params.organizationName,
     email: params.email,
     metadata: { organization_id: params.organizationId },
   });
+
+  // Replacing an unusable id, or binding the first one. Both end with a
+  // re-read, because a concurrent request may have won.
+  if (staleCustomerId) {
+    const bound = await replaceStoredCustomer({ organizationId: params.organizationId, staleCustomerId, replacementCustomerId: customer.id });
+    if (bound !== customer.id) reportEvent("billing.duplicate_customer_abandoned", { scope: "billing", organizationId: params.organizationId }, "warning");
+    return bound;
+  }
 
   // Service role: `subscriptions` has no UPDATE policy for `authenticated`
   // by design (0011), so a member's own session cannot write its billing row.

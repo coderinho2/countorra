@@ -147,11 +147,21 @@ async function paidSubscription(customerId: string, priceId: string, card = "pm_
   return stripe.subscriptions.create({ customer: customerId, items: [{ price: priceId }], payment_behavior: behavior, metadata: { organization_id: ORG, countorra_test_run: RUN } });
 }
 
-/** The real event Stripe recorded for an object, polled because events are
- *  written asynchronously. */
-async function eventFor(type: string, objectId: string, since: number): Promise<Stripe.Event> {
+/**
+ * The real event Stripe recorded for an object, polled because events are
+ * written asynchronously (observed: 2-5 seconds behind the object).
+ *
+ * `notBefore` MUST be a timestamp from STRIPE — an object's own `created` —
+ * never `Date.now()` from this machine. `events.list` filters on Stripe's
+ * clock, and a local clock running ahead of it puts the floor in Stripe's
+ * future, where the event's fixed timestamp can never arrive. That failed
+ * DETERMINISTICALLY, not flakily, on a machine 17 seconds fast: every poll
+ * queried a window the event would never enter, and the only symptom was
+ * "Stripe recorded no … event in 20 seconds".
+ */
+async function eventFor(type: string, objectId: string, notBefore: number): Promise<Stripe.Event> {
   for (let attempt = 0; attempt < 20; attempt++) {
-    const events = await stripe.events.list({ type, created: { gte: since - 5 }, limit: 50 });
+    const events = await stripe.events.list({ type, created: { gte: notBefore - 5 }, limit: 50 });
     const found = events.data.find((e) => (e.data.object as { id?: string }).id === objectId);
     if (found) return found;
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -224,6 +234,29 @@ describe.skipIf(!gate.enabled)("REAL Stripe TEST MODE", () => {
       expect(price.recurring?.usage_type).toBe("licensed");
     });
 
+    it.each([
+      ["premium", "txcd_10103000"],
+      ["business", "txcd_10103001"],
+    ] as const)("%s names a product with a tax code, without which Managed Payments refuses Checkout", async (plan, taxCode) => {
+      // This account has Managed Payments enabled by default, making Stripe the
+      // merchant of record. Stripe then REFUSES a Checkout line item whose
+      // product has no tax code:
+      //
+      //   Invalid line_items[0]: the product tax code is missing.
+      //
+      // A price can therefore be perfectly valid by every check above and still
+      // be unbuyable. That is not a hypothetical: both products were created
+      // without a tax code (scripts/stripe-test-setup.mjs did not set one), and
+      // every Checkout test in this file failed until they had one. Asserted
+      // here so the next person sees the cause in one line instead of a Stripe
+      // 400, and `node scripts/stripe-test-setup.mjs check` reports it without
+      // calling Checkout at all.
+      const price = await stripe.prices.retrieve(config.priceIds[plan], { expand: ["product"] });
+      const product = price.product as Stripe.Product;
+      expect(product.tax_code).toBeTruthy();
+      expect(product.tax_code).toBe(taxCode);
+    });
+
     it("maps each configured price back to exactly its plan, and nothing else", async () => {
       const { planForPriceId } = await import("@/server/billing/stripe-config");
       expect(planForPriceId(config.priceIds.premium)).toBe("premium");
@@ -274,9 +307,9 @@ describe.skipIf(!gate.enabled)("REAL Stripe TEST MODE", () => {
 
     beforeAll(async () => {
       customerId = await testCustomer("paid");
-      const since = Math.floor(Date.now() / 1000);
+      // No local timestamp is kept: every lookup below anchors to
+      // `subscription.created`, which is Stripe's own clock. See eventFor.
       subscription = await paidSubscription(customerId, config.priceIds.premium);
-      (globalThis as { __since?: number }).__since = since;
     });
 
     it("the test payment succeeds and Stripe reports an active Premium subscription", async () => {
@@ -289,7 +322,7 @@ describe.skipIf(!gate.enabled)("REAL Stripe TEST MODE", () => {
     it("Stripe's own event, signed with the real webhook secret, reaches the handler and maps to Premium", async () => {
       const { POST } = await import("@/app/api/stripe/webhook/route");
       const { entitlementsFor } = await import("@/domain/billing/entitlements");
-      const event = await eventFor("customer.subscription.created", subscription.id, (globalThis as { __since?: number }).__since!);
+      const event = await eventFor("customer.subscription.created", subscription.id, subscription.created);
       const payload = JSON.stringify(event);
       app.rpcCalls = [];
 
@@ -318,7 +351,7 @@ describe.skipIf(!gate.enabled)("REAL Stripe TEST MODE", () => {
 
     it("rejects the same real event with a modified body, or signed with a different secret", async () => {
       const { POST } = await import("@/app/api/stripe/webhook/route");
-      const event = await eventFor("customer.subscription.created", subscription.id, (globalThis as { __since?: number }).__since!);
+      const event = await eventFor("customer.subscription.created", subscription.id, subscription.created);
       const payload = JSON.stringify(event);
       const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret: config.webhookSecret });
       const tampered = payload.replace(ORG, OTHER_ORG);
@@ -331,14 +364,13 @@ describe.skipIf(!gate.enabled)("REAL Stripe TEST MODE", () => {
 
     it("Premium → Business: Stripe reflects it and the webhook maps it to Business", async () => {
       const { POST } = await import("@/app/api/stripe/webhook/route");
-      const since = Math.floor(Date.now() / 1000);
       const updated = await stripe.subscriptions.update(subscription.id, {
         items: [{ id: subscription.items.data[0].id, price: config.priceIds.business }],
         proration_behavior: "none",
       });
       expect(updated.items.data[0].price.id).toBe(config.priceIds.business);
 
-      const event = await eventFor("customer.subscription.updated", subscription.id, since);
+      const event = await eventFor("customer.subscription.updated", subscription.id, updated.created);
       const payload = JSON.stringify(event);
       app.rpcCalls = [];
       await POST(new Request("http://localhost/api/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": Stripe.webhooks.generateTestHeaderString({ payload, secret: config.webhookSecret }) } }));
@@ -352,11 +384,10 @@ describe.skipIf(!gate.enabled)("REAL Stripe TEST MODE", () => {
     it("cancellation: Stripe reports it, the webhook maps it, and paid entitlements are gone", async () => {
       const { POST } = await import("@/app/api/stripe/webhook/route");
       const { entitlementsFor } = await import("@/domain/billing/entitlements");
-      const since = Math.floor(Date.now() / 1000);
       const canceled = await stripe.subscriptions.cancel(subscription.id);
       expect(canceled.status).toBe("canceled");
 
-      const event = await eventFor("customer.subscription.deleted", subscription.id, since);
+      const event = await eventFor("customer.subscription.deleted", subscription.id, canceled.created);
       const payload = JSON.stringify(event);
       app.rpcCalls = [];
       await POST(new Request("http://localhost/api/stripe/webhook", { method: "POST", body: payload, headers: { "stripe-signature": Stripe.webhooks.generateTestHeaderString({ payload, secret: config.webhookSecret }) } }));
