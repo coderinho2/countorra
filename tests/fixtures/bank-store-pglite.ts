@@ -43,6 +43,7 @@ export function createPgliteBankStore(db: TestDatabase): BankStore {
     organizationId: String(row.organization_id),
     provider: String(row.provider),
     providerConnectionId: String(row.provider_connection_id),
+    providerEnvironment: (row.provider_environment as string | null) ?? null,
     institutionName: (row.institution_name as string | null) ?? null,
     status: row.status as BankConnectionRecord["status"],
     statusReason: row.status_reason as BankConnectionRecord["statusReason"],
@@ -97,7 +98,7 @@ export function createPgliteBankStore(db: TestDatabase): BankStore {
     });
   }
 
-  const CONNECTION_COLUMNS = "id, organization_id, provider, provider_connection_id, institution_name, status, status_reason, last_provider_event_at, consecutive_failed_runs, page_cursor, committed_cursor, last_successful_sync_at";
+  const CONNECTION_COLUMNS = "id, organization_id, provider, provider_connection_id, provider_environment, institution_name, status, status_reason, last_provider_event_at, consecutive_failed_runs, page_cursor, committed_cursor, last_successful_sync_at";
   const JOB_COLUMNS = "id, organization_id, connection_id, status, trigger, attempts, max_attempts, next_attempt_at, lease_expires_at";
 
   return {

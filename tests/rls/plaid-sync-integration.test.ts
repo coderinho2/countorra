@@ -19,7 +19,7 @@ import { createPgliteBankStore } from "../fixtures/bank-store-pglite";
 import type { BankStore } from "@/server/bank-connections/store";
 import { PlaidBankProvider } from "@/server/bank-connections/providers/plaid/adapter";
 import { createPlaidWebhookVerifier } from "@/server/bank-connections/providers/plaid/webhook-verification";
-import { completeBankLink, completeBankReauth, disconnectBankConnection, linkExternalAccount, requestBankSync, type ServiceDependencies } from "@/server/bank-connections/service";
+import { completeBankLink, completeBankReauth, createBankLinkSession, disconnectBankConnection, linkExternalAccount, requestBankSync, type ServiceDependencies } from "@/server/bank-connections/service";
 import { runBankSyncJob, type SystemAuditEvent } from "@/server/bank-connections/sync";
 import { ingestBankWebhook } from "@/server/bank-connections/webhooks";
 
@@ -560,5 +560,111 @@ describe("what Plaid must never touch or reveal", () => {
     }
     expect(output).toContain(connectionId);
     expect(output).toContain("plaid");
+  });
+});
+
+describe("the Plaid environment boundary", () => {
+  /**
+   * The real adapter, the real services, and a deployment re-pointed from
+   * Sandbox to Production — which is the change this whole guard exists for.
+   *
+   * A connection linked in Sandbox holds an `access-sandbox-…` token. Sent to
+   * production.plaid.com with production credentials it is meaningless; the
+   * point is that it is never sent at all, and never even decrypted.
+   */
+
+  /** The same adapter and gateway, with the deployment pointed elsewhere. */
+  const pointedAt = (environment: "sandbox" | "production") =>
+    new PlaidBankProvider({
+      gateway: double,
+      config: { environment, webhookUrl: "https://example.test/api/bank-connections/webhooks/plaid", redirectUri: null },
+      verifier: createPlaidWebhookVerifier({ fetchKey: (keyId) => double.getWebhookVerificationKey(keyId) }),
+    });
+
+  const gatewayCalls = () => ({ ...double.calls });
+
+  it("refuses to sync a sandbox item after the deployment moves to production", async () => {
+    const { connectionId } = await connect();
+    await sync(connectionId);
+    await linkAccount(connectionId);
+    expect(await scalar<string>(`select provider_environment from bank_connections where id = $1`, [connectionId])).toBe("sandbox");
+
+    const before = gatewayCalls();
+    // A delta, not an absolute: the successful sandbox sync above legitimately
+    // decrypted the token once. What must not happen is ANOTHER read for the
+    // run that is about to be refused.
+    const reads = secrets.reads.length;
+    const outcome = await sync(connectionId, { providers: [pointedAt("production")] });
+
+    expect(outcome).toMatchObject({ kind: "failed", category: "PROVIDER_NOT_CONFIGURED" });
+    // Not one Plaid call of any kind, and no further decryption.
+    expect(gatewayCalls()).toEqual(before);
+    expect(secrets.reads.length).toBe(reads);
+  });
+
+  it("refuses a re-auth link session for a mismatched connection, with zero Plaid calls", async () => {
+    const { connectionId } = await connect();
+    await sync(connectionId);
+    const before = gatewayCalls();
+    const reads = secrets.reads.length;
+
+    const outcome = await createBankLinkSession({ store, providers: [pointedAt("production")], secrets }, { organizationId: org, userId: OWNER, connectionId });
+
+    expect(outcome.kind).toBe("not_configured");
+    // No update-mode link token was requested…
+    expect(gatewayCalls()).toEqual(before);
+    // …and the access token was never read to put in one.
+    expect(secrets.reads.length).toBe(reads);
+  });
+
+  it("refuses to complete a re-auth for a mismatched connection, with zero Plaid calls", async () => {
+    const { connectionId } = await connect();
+    await sync(connectionId);
+    const before = gatewayCalls();
+    const reads = secrets.reads.length;
+
+    const outcome = await completeBankReauth(deps({ providers: [pointedAt("production")] }), { organizationId: org, connectionId, userId: OWNER });
+
+    expect(outcome.kind).toBe("not_configured");
+    expect(gatewayCalls()).toEqual(before);
+    expect(secrets.reads.length).toBe(reads);
+  });
+
+  it("still allows a NEW connection to be made in the current environment", async () => {
+    // The guard must not touch the one path that has no recorded environment
+    // yet. A production deployment linking a fresh item stamps "production".
+    const productionProvider = pointedAt("production");
+    const outcome = await completeBankLink({ ...deps({ providers: [productionProvider] }) }, { organizationId: org, userId: OWNER, providerId: "plaid", publicToken: "public-fresh" });
+
+    expect(outcome.kind).toBe("connected");
+    if (outcome.kind !== "connected") return;
+    expect(await scalar<string>(`select provider_environment from bank_connections where id = $1`, [outcome.connectionId])).toBe("production");
+  });
+
+  it("still allows a mismatched connection to be DISCONNECTED", async () => {
+    // Deliberately not guarded: a stale connection must remain removable, or
+    // the switch would strand it forever. Plaid's /item/remove is attempted and
+    // its failure tolerated, so the local cleanup happens regardless.
+    const { connectionId } = await connect();
+    await sync(connectionId);
+
+    const outcome = await disconnectBankConnection(deps({ providers: [pointedAt("production")] }), { organizationId: org, connectionId, actorId: OWNER });
+
+    expect(outcome.kind).toBe("disconnected");
+    expect(await scalar<string>(`select status from bank_connections where id = $1`, [connectionId])).toBe("DISCONNECTED");
+    // The ciphertext is gone, which is the part that matters.
+    expect(await scalar<number>(`select count(*)::int from bank_connection_credentials where connection_id = $1`, [connectionId])).toBe(0);
+  });
+
+  it("syncs a sandbox item normally while the deployment is still sandbox", async () => {
+    const { connectionId } = await connect();
+    await sync(connectionId);
+    await linkAccount(connectionId);
+    double.add(double.transaction({ transaction_id: "plaid-env-ok", amount: 31.5 }));
+
+    const outcome = await sync(connectionId);
+
+    expect(outcome).toMatchObject({ kind: "succeeded" });
+    expect(await scalar<number>(`select count(*)::int from bank_external_transactions where provider_transaction_id = $1`, ["plaid-env-ok"])).toBe(1);
   });
 });

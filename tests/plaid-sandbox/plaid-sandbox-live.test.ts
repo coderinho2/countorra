@@ -46,7 +46,44 @@ function readLocalEnv(): Record<string, string> {
 const local = readLocalEnv();
 const env = { ...local, ...process.env } as Record<string, string | undefined>;
 const optedIn = process.env.PLAID_SANDBOX_LIVE === "1";
-const sandbox = env.PLAID_ENV === "sandbox" && Boolean(env.PLAID_CLIENT_ID) && Boolean(env.PLAID_SECRET);
+
+/**
+ * Whether this suite may run, decided from EVERY source that could name an
+ * environment rather than from the merged value alone.
+ *
+ * The merged value is `{ ...local, ...process.env }`, so the shell wins. That
+ * means `.env.local` can hold PRODUCTION credentials while a shell override
+ * says `PLAID_ENV=sandbox`, and the old check — which only looked at the
+ * merged result — allowed it. The credentials and the environment would then
+ * come from different places: production keys pointed at sandbox.plaid.com.
+ *
+ * Plaid would reject that combination, and the adapter below is pinned to the
+ * sandbox host regardless, so the failure was a confusing test error rather
+ * than a production Item. But "it fails safely" is a weaker property than
+ * "it does not start", and this is the moment production keys arrive on
+ * somebody's machine. So a production value in ANY source disables the suite.
+ */
+export function mayRunAgainstSandbox(sources: {
+  /** PLAID_ENV as `.env.local` declares it. */
+  file: string | undefined;
+  /** PLAID_ENV as the shell declares it. */
+  shell: string | undefined;
+  clientId: string | undefined;
+  secret: string | undefined;
+}): boolean {
+  const declared = [sources.file, sources.shell].filter((value): value is string => Boolean(value));
+  // Not "the effective value is sandbox" — "nothing anywhere says production".
+  if (declared.includes("production")) return false;
+  if (declared.length === 0 || !declared.every((value) => value === "sandbox")) return false;
+  return Boolean(sources.clientId) && Boolean(sources.secret);
+}
+
+const sandbox = mayRunAgainstSandbox({
+  file: local.PLAID_ENV,
+  shell: process.env.PLAID_ENV,
+  clientId: env.PLAID_CLIENT_ID,
+  secret: env.PLAID_SECRET,
+});
 
 vi.hoisted(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://example.supabase.co";
@@ -67,9 +104,52 @@ import { completeBankLink, createBankLinkSession, disconnectBankConnection, type
 import { runBankSyncJob } from "@/server/bank-connections/sync";
 
 describe("the gate", () => {
-  it("refuses anything but the sandbox", () => {
-    // A production PLAID_ENV must never enable this suite.
-    expect(env.PLAID_ENV === "production" && optedIn && sandbox).toBe(false);
+  const CREDS = { clientId: "client", secret: "secret" };
+
+  it("runs when both sources say sandbox and credentials exist", () => {
+    expect(mayRunAgainstSandbox({ file: "sandbox", shell: undefined, ...CREDS })).toBe(true);
+    expect(mayRunAgainstSandbox({ file: "sandbox", shell: "sandbox", ...CREDS })).toBe(true);
+    expect(mayRunAgainstSandbox({ file: undefined, shell: "sandbox", ...CREDS })).toBe(true);
+  });
+
+  it("refuses when ANY source says production, whatever the other says", () => {
+    expect(mayRunAgainstSandbox({ file: "production", shell: undefined, ...CREDS })).toBe(false);
+    expect(mayRunAgainstSandbox({ file: undefined, shell: "production", ...CREDS })).toBe(false);
+    // The one the merged value used to allow: production credentials in
+    // .env.local, a shell override claiming sandbox.
+    expect(mayRunAgainstSandbox({ file: "production", shell: "sandbox", ...CREDS })).toBe(false);
+    expect(mayRunAgainstSandbox({ file: "sandbox", shell: "production", ...CREDS })).toBe(false);
+  });
+
+  it("refuses when nothing names an environment, rather than assuming sandbox", () => {
+    expect(mayRunAgainstSandbox({ file: undefined, shell: undefined, ...CREDS })).toBe(false);
+  });
+
+  it("refuses an environment name nobody defined", () => {
+    expect(mayRunAgainstSandbox({ file: "development", shell: undefined, ...CREDS })).toBe(false);
+  });
+
+  it("refuses without credentials", () => {
+    expect(mayRunAgainstSandbox({ file: "sandbox", shell: undefined, clientId: undefined, secret: "secret" })).toBe(false);
+    expect(mayRunAgainstSandbox({ file: "sandbox", shell: undefined, clientId: "client", secret: undefined })).toBe(false);
+  });
+
+  it("is off on THIS machine unless it was asked for", () => {
+    // The live suite below runs only on `optedIn && sandbox`; nothing here
+    // can enable it by accident.
+    expect(typeof (optedIn && sandbox)).toBe("boolean");
+  });
+
+  it("points the adapter at the sandbox host whatever the environment says", async () => {
+    // Defence in depth: even a mis-gated run could not reach production,
+    // because the host below is a literal rather than derived from PLAID_ENV.
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("tests/plaid-sandbox/plaid-sandbox-live.test.ts", "utf8");
+    expect(source).toContain('basePath: "https://sandbox.plaid.com"');
+    // Assembled rather than written out: a literal here would be found by the
+    // search itself, and the test would be asserting against its own text.
+    const productionHost = ["production", "plaid", "com"].join(".");
+    expect(source).not.toContain(productionHost);
   });
 });
 

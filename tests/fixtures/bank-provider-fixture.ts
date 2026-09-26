@@ -29,6 +29,14 @@ export class FixtureBankProvider implements BankConnectionProvider {
   readonly version = "1.0.0";
   readonly displayName = "Fixture bank data (tests only)";
   readonly capabilities = { webhooks: true, pendingTransactions: true, balances: true } as const;
+  /**
+   * Which environment this "deployment" is pointed at, exactly as the Plaid
+   * adapter carries `PLAID_ENV`. Mutable so a test can do what flipping
+   * PLAID_ENV does in production — change the runtime's environment while
+   * connections stamped with the old one are still in the database — and then
+   * assert the environment guard refuses them.
+   */
+  environment = "fixture";
 
   accounts: ProviderAccount[] = [];
   readonly webhookSecret = "fixture-webhook-signing-secret";
@@ -108,7 +116,10 @@ export class FixtureBankProvider implements BankConnectionProvider {
       providerConnectionId: `item-${input.publicToken}`,
       institutionId: "ins_fixture",
       institutionName: "Fixture Credit Union",
-      providerEnvironment: "fixture",
+      // From the same field the guard compares against, so a connection is
+      // always stamped with the environment that created it — never a literal
+      // that could silently drift from `this.environment`.
+      providerEnvironment: this.environment,
       secret: new ProviderSecret(`fixture-access-token-${input.publicToken}`),
     };
   }
@@ -170,6 +181,9 @@ export class MemorySecretStore implements ProviderSecretStore {
   readonly id = "memory";
   readonly secrets = new Map<string, string>();
   readonly destroyed: string[] = [];
+  /** Every reference this store was asked to decrypt. A test asserts this stays
+   *  EMPTY when a connection is refused at the environment boundary. */
+  readonly reads: string[] = [];
   failDestroy = false;
 
   async put(input: { secret: ProviderSecret }): Promise<string> {
@@ -179,6 +193,7 @@ export class MemorySecretStore implements ProviderSecretStore {
   }
 
   async get(reference: string): Promise<ProviderSecret | null> {
+    this.reads.push(reference);
     const value = this.secrets.get(reference);
     return value ? new ProviderSecret(value) : null;
   }

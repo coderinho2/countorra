@@ -168,4 +168,23 @@ describe("the provider environment", () => {
   it("cannot be edited afterwards", async () => {
     await expect(service((query) => query(`update bank_connections set provider_environment = 'production' where id = $1`, [connectionId]))).rejects.toThrow();
   });
+
+  it("cannot be cleared either, which is why a connection without one must fail closed", async () => {
+    // The guard in the sync engine refuses a connection whose recorded
+    // environment is null. That is not a state anything can be talked into
+    // afterwards — and equally, a legacy null cannot be "repaired" in place to
+    // make such a connection syncable. Nulling is a change like any other.
+    await expect(service((query) => query(`update bank_connections set provider_environment = null where id = $1`, [connectionId]))).rejects.toThrow();
+    expect(await scalar(`select provider_environment from bank_connections where id = $1`, [connectionId])).toBe("sandbox");
+  });
+
+  it("is what a stored credential is bound to, and the credential outlives a refusal", async () => {
+    // A refusal at the environment boundary is not a revocation: the encrypted
+    // row stays exactly as it was, so pointing the deployment back at the
+    // original environment restores the connection rather than orphaning it.
+    await insertSecret();
+    const before = await scalar<string>(`select ciphertext from bank_provider_secrets where connection_id = $1`, [connectionId]);
+    expect(await scalar<number>(`select count(*)::int from bank_provider_secrets where connection_id = $1`, [connectionId])).toBe(1);
+    expect(before).toBe(CIPHERTEXT);
+  });
 });

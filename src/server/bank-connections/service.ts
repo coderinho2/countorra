@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { canSync } from "@/domain/bank-connections/lifecycle";
 import {
+  BANK_PROVIDER_NOT_CONFIGURED_MESSAGE,
+  environmentMatches,
   providerCompletedLinkSchema,
   providerConnectionStateSchema,
   providerLinkSessionSchema,
@@ -40,6 +42,34 @@ export type LinkSessionOutcome =
   | { kind: "provider_failed"; category: SyncFailureCategory };
 
 /**
+ * One place that reports an environment boundary refusal, so every caller
+ * reports it identically.
+ *
+ * WHAT IT MAY CARRY: the step, the ids this module already logs everywhere
+ * else, the provider id, and the two environment NAMES. That describes a
+ * configuration mismatch completely.
+ *
+ * WHAT IT MUST NEVER CARRY: an access token, an encrypted credential or its
+ * reference, an institution, a cursor, a provider response or message, an
+ * amount, or anything about a person. A mismatch is a fact about the
+ * deployment, not about the customer.
+ */
+function reportEnvironmentMismatch(
+  step: string,
+  input: { organizationId: string; connectionId: string; provider: string; recorded: string | null; configured: string | null },
+): void {
+  reportEvent(
+    "bank.sync_environment_mismatch",
+    {
+      scope: "bank",
+      organizationId: input.organizationId,
+      detail: { step, connectionId: input.connectionId, provider: input.provider, recordedEnvironment: input.recorded, configuredEnvironment: input.configured },
+    },
+    "error",
+  );
+}
+
+/**
  * A short-lived token for the provider's own browser component — the ONLY
  * provider value that ever reaches a browser.
  *
@@ -59,6 +89,25 @@ export async function createBankLinkSession(
     const connection = await deps.store.getConnection(input.organizationId, input.connectionId);
     if (!connection || connection.status === "DISCONNECTED") return { kind: "not_found" };
     providerId = connection.provider;
+
+    // Repairing an EXISTING connection, so it has a recorded environment — and
+    // it must be this deployment's. Resolved (a cheap array lookup, repeated
+    // harmlessly below) and checked BEFORE the credential reference is read,
+    // so a mismatched connection never has its access token decrypted to be
+    // handed to the wrong environment's API. A new connection reaches none of
+    // this: it has no environment yet, and completeBankLink stamps it.
+    const repair = resolveBankProvider(deps.providers, providerId);
+    if (!repair.available) return { kind: "not_configured", message: repair.message };
+    if (!environmentMatches(connection.providerEnvironment, repair.provider.environment ?? null)) {
+      reportEnvironmentMismatch("create_link_session", {
+        organizationId: input.organizationId,
+        connectionId: connection.id,
+        provider: connection.provider,
+        recorded: connection.providerEnvironment,
+        configured: repair.provider.environment ?? null,
+      });
+      return { kind: "not_configured", message: BANK_PROVIDER_NOT_CONFIGURED_MESSAGE };
+    }
 
     const reference = await deps.store.getCredentialRef(input.organizationId, connection.id);
     const secret = reference && deps.secrets ? await deps.secrets.get(reference).catch(() => null) : null;
@@ -85,6 +134,11 @@ export type CompleteLinkOutcome =
   | { kind: "provider_failed"; category: SyncFailureCategory }
   | { kind: "already_connected"; connectionId: string }
   | { kind: "belongs_elsewhere" }
+  /** This workspace's OWN connection to the same provider handle, previously
+   *  disconnected. Refused for the same reason as `belongs_elsewhere` — the
+   *  provider identity is unique across the whole table — but it is not
+   *  somebody else's, and saying so would be wrong. */
+  | { kind: "previously_disconnected"; connectionId: string }
   | { kind: "failed"; connectionId: string }
   | { kind: "connected"; connectionId: string; jobId: string | null };
 
@@ -97,7 +151,11 @@ export type CompleteLinkOutcome =
  *
  * A provider connection id already registered to ANOTHER organization is
  * refused — the unique constraint would refuse it too — and the reason given
- * does not say whose it is.
+ * does not say whose it is. The same id registered to THIS organization and
+ * since disconnected is refused as well, for the same constraint, but is
+ * reported as its own outcome: it is the workspace's own history, and telling
+ * somebody their own former connection belongs to another workspace is a
+ * false statement that leads nowhere.
  */
 export async function completeBankLink(deps: ServiceDependencies, input: { organizationId: string; userId: string; providerId: string; publicToken: string }): Promise<CompleteLinkOutcome> {
   const availability = resolveBankProvider(deps.providers, input.providerId);
@@ -115,7 +173,12 @@ export async function completeBankLink(deps: ServiceDependencies, input: { organ
     return { kind: "belongs_elsewhere" };
   }
   if (existing && existing.status !== "DISCONNECTED") return { kind: "already_connected", connectionId: existing.id };
-  if (existing) return { kind: "belongs_elsewhere" };
+  // Same workspace, same provider handle, previously disconnected. Refused,
+  // because `bank_connections_provider_identity_unique` is global and the
+  // insert below would violate it — but this is THIS workspace's own record,
+  // and reporting it as belonging elsewhere sent somebody looking for a
+  // problem that does not exist.
+  if (existing) return { kind: "previously_disconnected", connectionId: existing.id };
 
   const connectionId = await deps.store.createConnection({
     organizationId: input.organizationId,
@@ -175,6 +238,20 @@ export async function completeBankReauth(deps: ServiceDependencies, input: { org
 
   const availability = resolveBankProvider(deps.providers, connection.provider);
   if (!availability.available) return { kind: "not_configured", message: availability.message };
+
+  // Same boundary as the sync path and for the same reason: before the
+  // credential is read, so a connection from another environment cannot be
+  // inspected with a token this deployment's API would not recognise.
+  if (!environmentMatches(connection.providerEnvironment, availability.provider.environment ?? null)) {
+    reportEnvironmentMismatch("complete_reauth", {
+      organizationId: input.organizationId,
+      connectionId: connection.id,
+      provider: connection.provider,
+      recorded: connection.providerEnvironment,
+      configured: availability.provider.environment ?? null,
+    });
+    return { kind: "not_configured", message: BANK_PROVIDER_NOT_CONFIGURED_MESSAGE };
+  }
 
   const reference = await deps.store.getCredentialRef(input.organizationId, connection.id);
   const secret = reference && deps.secrets ? await deps.secrets.get(reference).catch(() => null) : null;

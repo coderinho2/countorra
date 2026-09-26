@@ -332,3 +332,30 @@ export function resolveBankProvider(providers: readonly BankConnectionProvider[]
   if (!provider) return { available: false, reason: "NOT_CONFIGURED", message: BANK_PROVIDER_NOT_CONFIGURED_MESSAGE };
   return { available: true, provider };
 }
+
+/**
+ * Whether a connection may be worked at all by the provider this deployment
+ * has — decided by comparing the environment the connection was MADE in with
+ * the environment now configured.
+ *
+ * Why this exists. `provider_environment` is stamped at link time from the
+ * adapter and made immutable by `bank_connections_environment_guard`
+ * (migration 0048), so it is a reliable record of which of a provider's worlds
+ * a connection belongs to. Nothing, until now, compared it to the world the
+ * deployment is currently pointed at. Flipping `PLAID_ENV` therefore left
+ * every existing connection eligible for a sync that would send a sandbox
+ * access token to the production API, or the reverse — a credential crossing
+ * an environment boundary it was never issued for.
+ *
+ * FAILS CLOSED, and deliberately in the least clever way available: the only
+ * accepted outcome is two non-empty strings that are equal. A missing recorded
+ * environment is a MISMATCH, not a pass. Connections created before 0048 have
+ * `null` there, and "we do not know which world this belongs to" is precisely
+ * the case that must not reach a provider. There is no inference from
+ * NODE_ENV, no default, and no list of environment names here — this function
+ * cannot widen what counts as a match, only confirm an exact one.
+ */
+export function environmentMatches(recorded: string | null | undefined, configured: string | null | undefined): boolean {
+  if (!recorded || !configured) return false;
+  return recorded === configured;
+}

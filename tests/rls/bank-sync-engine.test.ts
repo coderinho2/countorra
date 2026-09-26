@@ -115,6 +115,23 @@ describe("connecting a bank", () => {
     expect(audits.map((event) => event.action)).toEqual(["bank_connection.status_changed"]);
   });
 
+  it("tells a workspace re-linking its OWN disconnected connection what actually happened", async () => {
+    // `bank_connections_provider_identity_unique` is global, so the row a
+    // disconnect leaves behind still reserves the provider's handle and the
+    // link must be refused. What it must NOT say is that the connection
+    // belongs to another workspace: it is this one's own history, and that
+    // message sends somebody looking for a problem that does not exist.
+    const { connectionId } = await connect("shared");
+    const disconnected = await disconnectBankConnection(deps(), { organizationId: org, connectionId, actorId: OWNER });
+    expect(disconnected.kind).toBe("disconnected");
+
+    const outcome = await completeBankLink(deps(), { organizationId: org, userId: OWNER, providerId: "fixture", publicToken: "shared" });
+    expect(outcome).toEqual({ kind: "previously_disconnected", connectionId });
+    // And nothing was created: one row, still disconnected.
+    expect(await scalar(`select count(*)::int from bank_connections`)).toBe(1);
+    expect(await scalar(`select status from bank_connections where id = $1`, [connectionId])).toBe("DISCONNECTED");
+  });
+
   it("refuses to register the same provider connection into a second workspace", async () => {
     await connect("shared");
     await db.asUser(OWNER);
@@ -593,5 +610,194 @@ describe("what a sync must never touch or say", () => {
       expect(output, forbidden).not.toContain(forbidden);
     }
     expect(output).toContain(connectionId);
+  });
+});
+
+describe("the provider environment boundary", () => {
+  /**
+   * What this protects. A connection's access token is issued by ONE of a
+   * provider's environments and is meaningless — and dangerous — in the other.
+   * `provider_environment` records which, immutably (0048). Flipping the
+   * deployment's environment, as moving Plaid from Sandbox to Production does,
+   * must not make the old connections eligible for a sync.
+   *
+   * These tests flip `provider.environment` after linking, which is exactly
+   * what that switch looks like from the sync engine's side: connections in the
+   * database stamped with one environment, a runtime pointed at another.
+   */
+
+  /** The provider and secret-store counters, so "zero calls" is measurable. */
+  const activity = () => ({ fetch: provider.calls.fetch, revoke: provider.calls.revoke, completeLink: provider.calls.completeLink, secretReads: secrets.reads.length });
+
+  async function connected() {
+    const { connectionId } = await connect();
+    await sync(connectionId);
+    await linkChecking(connectionId);
+    return connectionId;
+  }
+
+  it("refuses a sandbox connection on a production runtime, before any provider call", async () => {
+    provider.environment = "sandbox";
+    const connectionId = await connected();
+    expect(await scalar<string>(`select provider_environment from bank_connections where id = $1`, [connectionId])).toBe("sandbox");
+
+    // The deployment is re-pointed. The connection cannot follow: its
+    // environment is immutable.
+    provider.environment = "production";
+    provider.add(provider.transaction({ providerTransactionId: "after-switch", amount: "10.00" }));
+    const before = activity();
+
+    const outcome = await sync(connectionId);
+
+    expect(outcome).toMatchObject({ kind: "failed", category: "PROVIDER_NOT_CONFIGURED" });
+    // The whole point: nothing was fetched and no credential was decrypted.
+    expect(activity()).toEqual(before);
+  });
+
+  it("refuses a production connection on a sandbox runtime", async () => {
+    // The direction that matters most — a real bank's token must never be sent
+    // to a sandbox host.
+    provider.environment = "production";
+    const connectionId = await connected();
+    provider.environment = "sandbox";
+    const before = activity();
+
+    expect(await sync(connectionId)).toMatchObject({ kind: "failed", category: "PROVIDER_NOT_CONFIGURED" });
+    expect(activity()).toEqual(before);
+  });
+
+  it("never reads the credential reference of a mismatched connection", async () => {
+    provider.environment = "sandbox";
+    const connectionId = await connected();
+    provider.environment = "production";
+
+    const getCredentialRef = vi.spyOn(store, "getCredentialRef");
+    const reads = secrets.reads.length;
+    await sync(connectionId);
+
+    // Both halves of "before credential retrieval": the reference is not read
+    // from the database, and the ciphertext is never handed to the store.
+    expect(getCredentialRef).not.toHaveBeenCalled();
+    expect(secrets.reads.length).toBe(reads);
+    getCredentialRef.mockRestore();
+  });
+
+  it("leaves the encrypted credential in place, so a switch back recovers", async () => {
+    provider.environment = "sandbox";
+    const connectionId = await connected();
+    const secretsHeld = secrets.secrets.size;
+
+    provider.environment = "production";
+    await sync(connectionId);
+    // A refusal is not a revocation: nothing was destroyed.
+    expect(secrets.secrets.size).toBe(secretsHeld);
+    expect(secrets.destroyed).toHaveLength(0);
+
+    provider.environment = "sandbox";
+    provider.add(provider.transaction({ providerTransactionId: "back-again", amount: "12.34" }));
+    expect(await sync(connectionId)).toMatchObject({ kind: "succeeded" });
+    expect(await scalar<number>(`select count(*)::int from bank_external_transactions where provider_transaction_id = $1`, ["back-again"])).toBe(1);
+  });
+
+  it("fails closed for a connection with no recorded environment", async () => {
+    // Rows predating 0048 have `provider_environment` null. Inserted directly
+    // because the immutability trigger refuses to change it afterwards — which
+    // is also why this case cannot be repaired in place and must fail closed.
+    const connectionId = await db.asAdmin(async (query) => {
+      await query("set role service_role");
+      try {
+        const row = (
+          await query(
+            `insert into bank_connections (organization_id, provider, provider_connection_id, institution_name, provider_environment, created_by)
+             values ($1, 'fixture', 'item-legacy', 'Legacy Credit Union', null, $2) returning id`,
+            [org, OWNER],
+          )
+        ).rows[0] as { id: string };
+        return row.id;
+      } finally {
+        await query("reset role");
+      }
+    });
+    expect(await scalar<string | null>(`select provider_environment from bank_connections where id = $1`, [connectionId])).toBeNull();
+
+    const before = activity();
+    const job = await store.enqueueJob({ organizationId: org, connectionId, trigger: "SCHEDULED", idempotencyKey: "legacy-1", requestedBy: null, webhookEventId: null });
+    expect(job.outcome).toBe("CREATED");
+    const outcome = await runBankSyncJob(deps(), { organizationId: org, jobId: job.jobId! });
+
+    expect(outcome).toMatchObject({ kind: "failed", category: "PROVIDER_NOT_CONFIGURED" });
+    expect(activity()).toEqual(before);
+  });
+
+  it("does not count the refusal against the connection's health", async () => {
+    provider.environment = "sandbox";
+    const connectionId = await connected();
+    provider.environment = "production";
+    await sync(connectionId);
+    await sync(connectionId);
+    await sync(connectionId);
+
+    // PROVIDER_NOT_CONFIGURED is excluded from failureCountsAgainstConnection:
+    // a deployment's configuration must not march a workspace's connection to
+    // ERROR for something nobody using the product can fix.
+    const row = await db.asAdmin(
+      async (query) =>
+        (await query(`select status, consecutive_failed_runs from bank_connections where id = $1`, [connectionId])).rows[0] as { status: string; consecutive_failed_runs: number },
+    );
+    expect(row.consecutive_failed_runs).toBe(0);
+    expect(row.status).not.toBe("ERROR");
+  });
+
+  it("imports nothing and moves no cursor while refusing", async () => {
+    provider.environment = "sandbox";
+    const connectionId = await connected();
+    const externals = await scalar<number>(`select count(*)::int from bank_external_transactions where connection_id = $1`, [connectionId]);
+    const ledger = await bankLedgerCount();
+    const cursor = await scalar<string | null>(`select committed_cursor from bank_connections where id = $1`, [connectionId]);
+
+    provider.environment = "production";
+    provider.add(provider.transaction({ providerTransactionId: "must-not-arrive", amount: "999.99" }));
+    await sync(connectionId);
+
+    expect(await scalar<number>(`select count(*)::int from bank_external_transactions where connection_id = $1`, [connectionId])).toBe(externals);
+    expect(await bankLedgerCount()).toBe(ledger);
+    expect(await scalar<string | null>(`select committed_cursor from bank_connections where id = $1`, [connectionId])).toBe(cursor);
+    expect(await scalar<number>(`select count(*)::int from bank_external_transactions where provider_transaction_id = $1`, ["must-not-arrive"])).toBe(0);
+  });
+
+  it("syncs completely normally when the environments agree", async () => {
+    // The regression guard. Every other test in this file relies on this
+    // remaining true, but it is worth asserting head-on.
+    provider.environment = "production";
+    const connectionId = await connected();
+    provider.add(provider.transaction({ providerTransactionId: "normal-1", amount: "40.00" }));
+    provider.add(provider.transaction({ providerTransactionId: "normal-2", amount: "41.00" }));
+
+    const outcome = await sync(connectionId);
+
+    expect(outcome).toMatchObject({ kind: "succeeded" });
+    expect(await scalar<number>(`select count(*)::int from bank_external_transactions where provider_transaction_id in ('normal-1', 'normal-2')`)).toBe(2);
+    expect(await scalar<number>(`select consecutive_failed_runs from bank_connections where id = $1`, [connectionId])).toBe(0);
+  });
+
+  it("reports the mismatch with environment names and nothing else", async () => {
+    const lines: string[] = [];
+    for (const method of ["log", "info", "warn", "error", "debug"] as const) {
+      vi.spyOn(console, method).mockImplementation((...args: unknown[]) => void lines.push(args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" ")));
+    }
+    provider.environment = "sandbox";
+    const connectionId = await connected();
+    provider.environment = "production";
+    lines.length = 0;
+    await sync(connectionId);
+
+    const output = lines.join("\n");
+    expect(output).toContain("bank.sync_environment_mismatch");
+    expect(output).toContain("sandbox");
+    expect(output).toContain("production");
+    // The event describes a configuration, not a customer.
+    for (const forbidden of ["fixture-access-token", "memory:", "Fixture Credit Union", "0000111122223333", "item-public-1"]) {
+      expect(output, forbidden).not.toContain(forbidden);
+    }
   });
 });

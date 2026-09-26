@@ -51,6 +51,16 @@ export interface BankConnectionRecord {
   organizationId: string;
   provider: string;
   providerConnectionId: string;
+  /**
+   * Which of the provider's environments this connection was made in (Plaid:
+   * "sandbox" | "production"), stamped at link time and immutable thereafter.
+   * `null` for connections created before migration 0048 recorded it.
+   *
+   * Read by the sync path to refuse a connection whose environment is not the
+   * one now configured (`environmentMatches`), so this is a safety input, not
+   * a display field.
+   */
+  providerEnvironment: string | null;
   institutionName: string | null;
   status: ConnectionStatus;
   statusReason: ConnectionStatusReason;

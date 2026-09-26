@@ -43,7 +43,7 @@ type Client = SupabaseClient<Database>;
  */
 
 const CONNECTION_COLUMNS =
-  "id, organization_id, provider, provider_connection_id, institution_name, status, status_reason, last_provider_event_at, consecutive_failed_runs, page_cursor, committed_cursor, last_successful_sync_at";
+  "id, organization_id, provider, provider_connection_id, provider_environment, institution_name, status, status_reason, last_provider_event_at, consecutive_failed_runs, page_cursor, committed_cursor, last_successful_sync_at";
 
 const JOB_COLUMNS = "id, organization_id, connection_id, status, trigger, attempts, max_attempts, next_attempt_at, lease_expires_at";
 
@@ -52,7 +52,7 @@ const RECONCILIATION_COLUMNS =
 
 type ConnectionSelect = Pick<
   BankConnectionRow,
-  "id" | "organization_id" | "provider" | "provider_connection_id" | "institution_name" | "status" | "status_reason" | "last_provider_event_at" | "consecutive_failed_runs" | "page_cursor" | "committed_cursor" | "last_successful_sync_at"
+  "id" | "organization_id" | "provider" | "provider_connection_id" | "provider_environment" | "institution_name" | "status" | "status_reason" | "last_provider_event_at" | "consecutive_failed_runs" | "page_cursor" | "committed_cursor" | "last_successful_sync_at"
 >;
 
 function toConnection(row: ConnectionSelect): BankConnectionRecord {
@@ -61,6 +61,7 @@ function toConnection(row: ConnectionSelect): BankConnectionRecord {
     organizationId: row.organization_id,
     provider: row.provider,
     providerConnectionId: row.provider_connection_id,
+    providerEnvironment: row.provider_environment,
     institutionName: row.institution_name,
     status: row.status,
     statusReason: row.status_reason as ConnectionStatusReason,

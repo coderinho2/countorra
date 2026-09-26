@@ -6,6 +6,7 @@ import {
   ProviderSecret,
   SECRET_REF_PATTERN,
   providerTransactionsPageSchema,
+  environmentMatches,
   providerWebhookEventSchema,
   resolveBankProvider,
   runBankProviderCall,
@@ -134,5 +135,68 @@ describe("resolving a provider", () => {
     const fake = { id: "fixture", version: "1", displayName: "Fixture" } as BankConnectionProvider;
     expect(resolveBankProvider([fake], "fixture")).toEqual({ available: true, provider: fake });
     expect(resolveBankProvider([fake], "plaid").available).toBe(false);
+  });
+});
+
+describe("the provider environment boundary", () => {
+  /**
+   * The rule a connection's access token depends on: it may only be used
+   * against the environment that issued it. `provider_environment` is stamped
+   * at link time and immutable (0048); this predicate is what compares it to
+   * the environment the deployment is pointed at now.
+   */
+
+  it("allows a connection worked in the environment it was made in", () => {
+    expect(environmentMatches("sandbox", "sandbox")).toBe(true);
+    expect(environmentMatches("production", "production")).toBe(true);
+  });
+
+  it("refuses a sandbox connection on a production runtime", () => {
+    expect(environmentMatches("sandbox", "production")).toBe(false);
+  });
+
+  it("refuses a production connection on a sandbox runtime", () => {
+    // The direction that matters most: a PRODUCTION token must never be sent
+    // to sandbox.plaid.com, whatever a misconfigured deployment asks for.
+    expect(environmentMatches("production", "sandbox")).toBe(false);
+  });
+
+  it("refuses a connection with no recorded environment", () => {
+    // Rows created before 0048 recorded one. "We do not know which world this
+    // belongs to" is exactly the case that must not reach a provider.
+    expect(environmentMatches(null, "production")).toBe(false);
+    expect(environmentMatches(undefined, "production")).toBe(false);
+    expect(environmentMatches(null, "sandbox")).toBe(false);
+    expect(environmentMatches(undefined, "sandbox")).toBe(false);
+  });
+
+  it("refuses when the deployment names no environment", () => {
+    expect(environmentMatches("production", null)).toBe(false);
+    expect(environmentMatches("production", undefined)).toBe(false);
+    expect(environmentMatches(null, null)).toBe(false);
+    expect(environmentMatches(undefined, undefined)).toBe(false);
+  });
+
+  it("refuses the empty string, rather than matching it against itself", () => {
+    // `"" === ""` is true, so a naive equality check would PASS two blank
+    // environments. A blank is an absent value that happens to be a string.
+    expect(environmentMatches("", "")).toBe(false);
+    expect(environmentMatches("", "production")).toBe(false);
+    expect(environmentMatches("production", "")).toBe(false);
+  });
+
+  it("compares exactly — no case folding, trimming or prefixing", () => {
+    // Nothing here may widen what counts as a match.
+    expect(environmentMatches("Production", "production")).toBe(false);
+    expect(environmentMatches("production ", "production")).toBe(false);
+    expect(environmentMatches("production", "production-eu")).toBe(false);
+    expect(environmentMatches("prod", "production")).toBe(false);
+  });
+
+  it("does not privilege any particular environment name", () => {
+    // It knows nothing about Plaid's vocabulary, so a second provider with
+    // different environment names is covered by the same rule.
+    expect(environmentMatches("fixture", "fixture")).toBe(true);
+    expect(environmentMatches("development", "sandbox")).toBe(false);
   });
 });

@@ -816,3 +816,96 @@ describe("queue health", () => {
     expect(events.filter((event) => event.errorName === "bank.worker_backlog")).toHaveLength(0);
   });
 });
+
+describe("a connection from another environment, seen by the worker", () => {
+  /**
+   * The worker serves every organization in one invocation, so the question is
+   * not only "is the mismatched connection refused" but "does refusing it cost
+   * anything else". A guard that wedged the queue, or that stopped the
+   * invocation before the healthy connections were worked, would trade one
+   * problem for a worse one.
+   */
+
+  it("counts the mismatched connection as failed and finishes the invocation", async () => {
+    provider.environment = "sandbox";
+    const { connectionId, initialJobId } = await connect();
+    await syncAndLink(connectionId, initialJobId);
+    await enqueue(connectionId);
+
+    provider.environment = "production";
+    const fetches = provider.calls.fetch;
+
+    const worked = await runBankSyncWorker(deps(), { maxDurationMs: 10_000 });
+
+    expect(worked.executed).toBe(1);
+    expect(worked.failed).toBe(1);
+    expect(worked.succeeded).toBe(0);
+    // Refused before the provider, even inside the worker.
+    expect(provider.calls.fetch).toBe(fetches);
+  });
+
+  it("does not wedge the queue: the job finishes and nothing stays leased", async () => {
+    provider.environment = "sandbox";
+    const { connectionId, initialJobId } = await connect();
+    await syncAndLink(connectionId, initialJobId);
+    const jobId = await enqueue(connectionId);
+
+    provider.environment = "production";
+    await runBankSyncWorker(deps(), { maxDurationMs: 10_000 });
+
+    const finished = await job(jobId);
+    // Terminal, lease released, nothing left for a reclaim sweep to find.
+    expect(["FAILED", "RETRYABLE"]).toContain(finished.status);
+    expect(finished.lease_expires_at).toBeNull();
+    expect(await scalar<number>(`select count(*)::int from bank_sync_jobs where status = 'RUNNING'`)).toBe(0);
+    expect(await store.reclaimExpiredLeases(10)).toBe(0);
+
+    // And a second invocation is not stuck on it either.
+    const again = await runBankSyncWorker(deps(), { maxDurationMs: 10_000 });
+    expect(again.abandoned).toBe(0);
+  });
+
+  it("still works a matching connection in the same invocation", async () => {
+    // The mismatched one must not starve the healthy one. Two organizations,
+    // because a connection's environment is fixed at link time — so the only
+    // way to have one of each is to link them under different runtimes.
+    provider.environment = "sandbox";
+    const stale = await connect(org, "public-stale");
+    await syncAndLink(stale.connectionId, stale.initialJobId);
+    await enqueue(stale.connectionId);
+
+    const second = await newOrganization("Healthy Workspace");
+    provider.environment = "production";
+    const healthy = await connect(second.organizationId, "public-healthy");
+    await syncAndLink(healthy.connectionId, healthy.initialJobId, second.organizationId, second.accountId);
+    provider.add(provider.transaction({ providerTransactionId: "healthy-1", amount: "25.00" }));
+    await enqueue(healthy.connectionId, second.organizationId);
+
+    const worked = await runBankSyncWorker(deps(), { maxDurationMs: 20_000 });
+
+    expect(worked.executed).toBe(2);
+    expect(worked.succeeded).toBe(1);
+    expect(worked.failed).toBe(1);
+    // The healthy workspace's import landed.
+    expect(await scalar<number>(`select count(*)::int from bank_external_transactions where provider_transaction_id = $1`, ["healthy-1"])).toBe(1);
+    // The stale one imported nothing.
+    expect(await scalar<number>(`select count(*)::int from bank_external_transactions where connection_id = $1 and provider_transaction_id = $2`, [stale.connectionId, "healthy-1"])).toBe(0);
+  });
+
+  it("is not scheduled into an endless retry loop", async () => {
+    provider.environment = "sandbox";
+    const { connectionId, initialJobId } = await connect();
+    await syncAndLink(connectionId, initialJobId);
+    await enqueue(connectionId);
+    provider.environment = "production";
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await runBankSyncWorker(deps({ now: () => clockSoRetryIsDue(attempt + 1) }), { maxDurationMs: 10_000 });
+    }
+
+    // Whatever the retry policy decides, it terminates and the provider is
+    // never called.
+    expect(await scalar<number>(`select count(*)::int from bank_sync_jobs where connection_id = $1 and status in ('QUEUED', 'RUNNING')`, [connectionId])).toBe(0);
+    expect(provider.calls.fetch).toBe(1); // the INITIAL sync, before the switch
+  });
+});

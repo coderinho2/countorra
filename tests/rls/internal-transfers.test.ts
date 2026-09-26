@@ -515,6 +515,6 @@ describe("through the real reconciliation loop", () => {
 
 describe("schema version", () => {
   it("is 0057", async () => {
-    expect(await service(async (query) => one<{ v: string }>(await query(`select operations_schema_version() as v`)).v)).toBe("0057");
+    expect(await service(async (query) => one<{ v: string }>(await query(`select operations_schema_version() as v`)).v)).toBe("0059");
   });
 });

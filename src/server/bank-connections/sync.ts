@@ -1,6 +1,14 @@
 import { failureCountsAgainstConnection, nextConnectionStatus, type ConnectionEvent } from "@/domain/bank-connections/lifecycle";
 import { normalizeTransactionsPage } from "@/domain/bank-connections/normalization";
-import { MAX_PAGE_SIZE, providerTransactionsPageSchema, resolveBankProvider, runBankProviderCall, type BankConnectionProvider, type ProviderSecretStore } from "@/domain/bank-connections/provider";
+import {
+  MAX_PAGE_SIZE,
+  environmentMatches,
+  providerTransactionsPageSchema,
+  resolveBankProvider,
+  runBankProviderCall,
+  type BankConnectionProvider,
+  type ProviderSecretStore,
+} from "@/domain/bank-connections/provider";
 import { decideReconciliation } from "@/domain/bank-connections/reconciliation";
 import { matchInternalTransfer, withinRetroCorrectionWindow, worthSearchingForCounterpart, type TransferSide } from "@/domain/bank-connections/internal-transfers";
 import { MAX_PAGES_PER_RUN, MAX_RECONCILED_PER_RUN, RECONCILE_BATCH_SIZE, SYNC_LEASE_SECONDS, decideSyncFailure, jobRunnability, syncIdempotencyKey } from "@/domain/bank-connections/sync-job";
@@ -174,6 +182,48 @@ export async function executeClaimedSyncRun(
   const availability = resolveBankProvider(deps.providers, connection.provider);
   if (!availability.available) return fail("PROVIDER_NOT_CONFIGURED");
   const { provider } = availability;
+
+  /**
+   * THE ENVIRONMENT BOUNDARY.
+   *
+   * A connection records which of the provider's environments it was made in,
+   * immutably (0048). The deployment names the environment it is pointed at
+   * now. If those disagree, this connection's access token was issued by a
+   * different world than the one this process talks to, and the only correct
+   * thing to do with it is nothing.
+   *
+   * It is checked HERE, before `getCredentialRef` below, so a mismatch never
+   * reads the credential reference, never asks the secret store, never
+   * decrypts a token and never reaches the provider. The run is failed the
+   * ordinary way instead.
+   *
+   * `PROVIDER_NOT_CONFIGURED` is the category because it is already true in
+   * the sense that matters — this deployment has no provider configured for
+   * THIS connection's environment — and because it is already excluded from
+   * `failureCountsAgainstConnection`, so a workspace's connection is not
+   * marched toward ERROR for a deployment-configuration fact nobody using the
+   * product can fix. The category is coarse on purpose; the event below is
+   * what tells an operator what actually happened.
+   */
+  if (!environmentMatches(connection.providerEnvironment, provider.environment ?? null)) {
+    reportEvent(
+      "bank.sync_environment_mismatch",
+      {
+        scope: "bank",
+        organizationId: input.organizationId,
+        detail: {
+          ...detail,
+          // Environment NAMES and the provider id. No token, no institution,
+          // no cursor, no amount, no provider message — a mismatch is a
+          // configuration fact, and these three values describe it completely.
+          recordedEnvironment: connection.providerEnvironment,
+          configuredEnvironment: provider.environment ?? null,
+        },
+      },
+      "error",
+    );
+    return fail("PROVIDER_NOT_CONFIGURED");
+  }
 
   const secretRef = await deps.store.getCredentialRef(input.organizationId, connection.id);
   let secret = null;

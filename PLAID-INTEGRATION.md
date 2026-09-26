@@ -53,9 +53,18 @@ evidence it should produce, is
   adapter and is immutable (`bank_connections_environment_guard`, migration
   0048). Sandbox connections carry a "Sandbox — test data" badge in the UI, and
   the assistant is told the data is fictional.
-* **Never put production credentials in a test environment.** No automated test
-  in this repository reads `PLAID_*`; the suites use a deterministic double
-  (`tests/fixtures/plaid-gateway-double.ts`).
+* **Never put production credentials in a test environment.** Every suite that
+  runs by default uses a deterministic double
+  (`tests/fixtures/plaid-gateway-double.ts`) and reads no `PLAID_*` variable.
+  One suite is different and needs to be understood before production
+  credentials go anywhere near a machine that runs tests:
+  `tests/plaid-sandbox/plaid-sandbox-live.test.ts` reads `PLAID_CLIENT_ID`,
+  `PLAID_SECRET` and `PLAID_ENV` from `.env.local` and calls the real Plaid
+  API. It is off unless `PLAID_SANDBOX_LIVE=1`, and it **refuses to run unless
+  `PLAID_ENV` is `sandbox`** — a production value disables it rather than
+  pointing it at real banks. That guard is asserted by a test of its own
+  ("the gate refuses anything but the sandbox"), which runs even when the
+  suite is off.
 * Sandbox test credentials for the Link dialog are Plaid's own
   (`user_good` / `pass_good`), documented by Plaid, not stored here.
 
