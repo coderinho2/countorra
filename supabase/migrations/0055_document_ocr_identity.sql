@@ -93,6 +93,9 @@ alter table document_extracted_fields
 --   transaction, whatever code later reads it.
 
 alter table document_extracted_fields
+  drop constraint if exists document_extracted_fields_identity_no_money;
+
+alter table document_extracted_fields
   add constraint document_extracted_fields_identity_no_money check (
     section <> 'IDENTITY'
     or (amount_minor is null and normalized_decimal is null and currency is null)
@@ -107,6 +110,9 @@ alter table document_extracted_fields
 --   This is the database's own copy of the rule in identity.ts. Both exist on
 --   purpose: the application's version produces a good error during
 --   development, and this one survives the application being wrong.
+
+alter table document_extracted_fields
+  drop constraint if exists document_extracted_fields_identity_no_identifiers;
 
 alter table document_extracted_fields
   add constraint document_extracted_fields_identity_no_identifiers check (

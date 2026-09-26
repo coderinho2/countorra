@@ -447,6 +447,14 @@ export type SalesTaxConfigurationRow = {
   updated_at: string;
 }
 
+export type DeveloperPlanOverrideRow = {
+  organization_id: string;
+  plan_id: PlanTier;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type DocumentRow = {
   id: string;
   organization_id: string;
@@ -461,6 +469,10 @@ export type DocumentRow = {
   created_at: string;
   updated_at: string;
   form_type: "w9" | "1099-nec" | "1099-misc" | "1099-k" | "other" | null;
+  /** 0058. NULL for every financial document: no automatic expiry. */
+  retention_expires_at: string | null;
+  /** 0058. Set once the retention sweep removed the stored bytes. */
+  original_removed_at: string | null;
 }
 
 export type DocumentProcessingJobRow = {
@@ -1259,6 +1271,22 @@ export type Database = {
         };
         Relationships: [];
       };
+      developer_plan_overrides: {
+        Row: DeveloperPlanOverrideRow;
+        Insert: {
+          organization_id: string;
+          plan_id: PlanTier;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          plan_id?: PlanTier;
+          created_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       documents: {
         Row: DocumentRow;
         Insert: {
@@ -1275,6 +1303,8 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           form_type?: "w9" | "1099-nec" | "1099-misc" | "1099-k" | "other" | null;
+          retention_expires_at?: string | null;
+          original_removed_at?: string | null;
         };
         Update: {
           id?: string;
@@ -1290,6 +1320,8 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           form_type?: "w9" | "1099-nec" | "1099-misc" | "1099-k" | "other" | null;
+          retention_expires_at?: string | null;
+          original_removed_at?: string | null;
         };
         Relationships: [];
       };
@@ -2446,6 +2478,14 @@ export type Database = {
         Returns: { id: string; account_id: string; kind: TransactionKind; amount_minor: number; currency: string; occurred_on: string; source: string }[];
       };
       /** 0057. Scoped, filtered candidates for the other leg of a transfer. */
+      documents_expired_originals: {
+        Args: { p_limit: number };
+        Returns: { document_id: string; organization_id: string; storage_path: string }[];
+      };
+      document_original_removed: {
+        Args: { p_organization_id: string; p_document_id: string };
+        Returns: boolean;
+      };
       bank_transfer_candidates: {
         Args: { p_organization_id: string; p_external_id: string };
         Returns: {

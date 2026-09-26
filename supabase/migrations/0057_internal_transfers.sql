@@ -74,6 +74,20 @@ alter table bank_external_transactions
   add column if not exists transfer_counterpart_id uuid,
   add column if not exists transfer_role text;
 
+-- Re-runnable. A push that cannot be retried is no use for repairing drift,
+-- which is the one moment a migration is needed most: the five constraints
+-- below are dropped first, so a database that already has some of them (a
+-- previous attempt, a hand-applied statement) accepts the file rather than
+-- refusing it with 42710. Each `if exists` is a no-op where the constraint
+-- has never existed, so a fresh database is unaffected. The definitions that
+-- follow are unchanged and are what the table ends up with either way.
+alter table bank_external_transactions
+  drop constraint if exists bank_external_transactions_transfer_counterpart_fkey,
+  drop constraint if exists bank_external_transactions_transfer_role_consistent,
+  drop constraint if exists bank_external_transactions_transfer_role_values,
+  drop constraint if exists bank_external_transactions_transfer_not_self,
+  drop constraint if exists bank_external_transactions_counterpart_has_no_ledger_row;
+
 alter table bank_external_transactions
   add constraint bank_external_transactions_transfer_counterpart_fkey
     foreign key (transfer_counterpart_id, organization_id)
@@ -96,7 +110,7 @@ alter table bank_external_transactions
 -- Each leg may be claimed exactly once. This is what makes pairing idempotent
 -- and stops a third transaction joining an existing pair: a duplicate webhook
 -- or a repeated sync that tried would violate it.
-create unique index bank_external_transactions_transfer_counterpart_idx
+create unique index if not exists bank_external_transactions_transfer_counterpart_idx
   on bank_external_transactions (transfer_counterpart_id)
   where transfer_counterpart_id is not null;
 
@@ -334,6 +348,8 @@ begin
   return new;
 end;
 $$;
+
+drop trigger if exists bank_external_transactions_paired_guard_trg on bank_external_transactions;
 
 create trigger bank_external_transactions_paired_guard_trg
   before update on bank_external_transactions

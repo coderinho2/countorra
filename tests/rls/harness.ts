@@ -119,6 +119,11 @@ export async function createTestDatabase() {
   return new TestDatabase(db);
 }
 
+/** Exported so a test can re-apply one migration file the way the harness
+ *  applies all of them — see tests/rls/migration-idempotency.test.ts, which
+ *  runs a file twice to prove it is rerunnable. */
+export { splitStatements as splitMigrationStatements };
+
 /** Naive but sufficient splitter: none of our migration SQL uses `$$`-quoted
  *  bodies containing a literal `; ` followed by more top-level statements
  *  outside the function body in a way this would mis-split, except that
